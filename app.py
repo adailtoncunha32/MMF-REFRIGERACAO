@@ -119,7 +119,8 @@ def aplicar_css() -> None:
         section[data-testid="stSidebar"] [data-testid^="stBaseButton-secondary"] {{
             border-color:#FFFFFF !important; }}
         .logo-app {{ display:flex; align-items:center; gap:.6rem; margin-bottom:.4rem; }}
-        .logo-app .icone {{ font-size: 2rem; background:{CIANO}; border-radius:12px;
+        .logo-app .icone {{ font-size: 1.9rem; line-height:1; background:#FFFFFF; border-radius:12px;
+            box-shadow:0 0 0 2px {CIANO};
             width:48px; height:48px; display:flex; align-items:center; justify-content:center; }}
         .logo-app .nome {{ color:#fff; font-weight:700; font-size:1.15rem; line-height:1.2; }}
         .logo-app .sub {{ color:#9FD8E6; font-size:.78rem; }}
@@ -272,7 +273,7 @@ def barra_lateral() -> str:
 
     with st.sidebar:
         st.markdown(
-            '<div class="logo-app"><div class="icone"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M20.7 7L3.3 17M12 5.5l-2.2-2.2M12 5.5l2.2-2.2M12 18.5l-2.2 2.2M12 18.5l2.2 2.2"/></svg></div><div>'
+            '<div class="logo-app"><div class="icone">❄️</div><div>'
             f'<div class="nome">{html.escape(NOME_APP)}</div>'
             '<div class="sub">Recrutamento técnico com IA</div></div></div>',
             unsafe_allow_html=True,
