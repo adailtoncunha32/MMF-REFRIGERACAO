@@ -9,6 +9,7 @@ de websites.
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional
 
@@ -23,7 +24,29 @@ DOMINIOS_EXCLUIDOS = [
     "amazon.es", "amazon.com", "ebay.com", "aliexpress.com", "leroymerlin.pt",
     "worten.pt", "fnac.pt", "mediamarkt.pt", "kuantokusta.pt", "youtube.com",
     "tiktok.com", "pinterest.com", "pinterest.pt", "wikipedia.org",
+    # Portais de ofertas de emprego e agências: publicam vagas, não candidatos.
+    "net-empregos.com", "emprego.sapo.pt", "pt.indeed.com", "indeed.com", "pt.jobsora.com",
+    "jobsora.com", "manpower.pt", "adecco.com", "randstad.pt", "kellyservices.pt",
+    "pt.jooble.org", "jooble.org", "glassdoor.com", "glassdoor.pt", "careerjet.pt",
+    "itjobs.pt", "expressoemprego.pt", "pt.talent.com", "talent.com", "linkedin.com/jobs",
+    "emprego.com", "jobleads.com", "gigroup.com", "pt.gigroup.com", "evolverh.pt", "egor.pt",
+    "bracos.app", "pt.trabajo.org", "trabajo.org", "trabalhar.pt", "empregosonline.pt", "workana.com", "jobatus.pt", "kitempleo.pt",
 ]
+
+# Sinais de que um resultado é uma OFERTA de emprego (não um profissional). Os perfis
+# pessoais do LinkedIn nunca são filtrados por estes sinais.
+_RE_OFERTA = re.compile(
+    r"\(m/f\)|\bm/f\b|ofertas? de emprego|\bvagas?\b|\brecrut(?:a|amento)\b|candidat[ae]-se|"
+    r"estamos a recrutar|we are hiring|job offer|/jobs?/|/vagas?/|/empregos?/|/careers?/|/carreiras?/",
+    re.IGNORECASE,
+)
+
+
+def parece_oferta_emprego(url: str, titulo: str, resumo: str) -> bool:
+    """True se o resultado for uma oferta de emprego e não o perfil de um profissional."""
+    if "linkedin.com/in/" in url.lower():
+        return False
+    return bool(_RE_OFERTA.search(f"{url} {titulo}") or _RE_OFERTA.search(resumo[:300]))
 
 # Termos de pesquisa associados a cada opção de disponibilidade.
 _TERMOS_DISPONIBILIDADE = {
@@ -79,11 +102,14 @@ def gerar_consultas(parametros: dict, limite: int = 8) -> list[str]:
         "fluorad" in e.lower() or "f-gas" in e.lower() for e in especialidades
     )
 
+    # Todas as consultas procuram o PROFISSIONAL (perfil, currículo, quem procura trabalho),
+    # nunca ofertas de emprego publicadas por empresas.
     modelos = [
-        '"{esp}" {loc} currículo perfil profissional experiência',
+        'site:linkedin.com/in "{esp}" {loc} "open to work" OR "à procura de emprego" OR "disponível"',
+        '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de novas oportunidades"',
         'site:linkedin.com/in "{esp}" {loc}',
-        '"{esp}" {loc} "procuro emprego" OR "à procura de novas oportunidades" OR "disponibilidade imediata"',
-        '"{esp}" {loc} freelancer OR "trabalhador independente" contacto',
+        '"{esp}" {loc} currículo OR "curriculum vitae" OR CV experiência',
+        '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" contacto',
     ]
     if termo_contrato:
         modelos.insert(1, '"{esp}" {loc} ' + termo_contrato)
@@ -193,6 +219,8 @@ def executar_pesquisa(
         resumo = limpar_texto(r.get("content") or "", 800)
         if len(conteudo) < 40 and len(resumo) < 40:
             continue
+        if parece_oferta_emprego(url, limpar_texto(r.get("title")), resumo):
+            continue  # ofertas de emprego não interessam: procuramos profissionais
         resultados.append(
             {
                 "url": url,
