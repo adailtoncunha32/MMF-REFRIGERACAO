@@ -132,6 +132,12 @@ def aplicar_css() -> None:
             border-left:5px solid {CIANO}; border-radius:12px; padding:.8rem 1rem;
             box-shadow:0 1px 3px rgba(11,37,69,.06); }}
         div[data-testid="stMetricValue"] {{ color:{AZUL_ESCURO}; }}
+        div[data-testid="stMetric"] label, div[data-testid="stMetric"] label *,
+        div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] *,
+        div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {{
+            white-space:normal !important; overflow:visible !important; text-overflow:clip !important;
+            word-break:normal !important; overflow-wrap:normal !important; }}
+        div[data-testid="stMetric"] label {{ min-height:2.6em; align-items:flex-start; }}
         .cartao {{ background:#fff; border:1px solid #E1E8F0; border-radius:12px;
             padding:1rem 1.2rem; margin-bottom:.8rem; box-shadow:0 1px 3px rgba(11,37,69,.06); }}
         .cartao h3 {{ margin:0 0 .2rem 0; padding:0; color:{AZUL_ESCURO}; font-size:1.25rem; }}
@@ -431,10 +437,28 @@ def executar_prospecao(parametros: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def _grafico(fig, legenda: bool = False) -> None:
-    fig.update_layout(margin=dict(l=10, r=10, t=45, b=10), paper_bgcolor="#FFFFFF",
+    fig.update_layout(margin=dict(l=10, r=20, t=50, b=10), paper_bgcolor="#FFFFFF",
                       plot_bgcolor="#FFFFFF", font=dict(color=AZUL_ESCURO), title_font_size=16,
-                      showlegend=legenda, height=340)
-    st.plotly_chart(fig, **LARGURA)
+                      showlegend=legenda, height=340,
+                      legend=dict(orientation="h", yanchor="bottom", y=-0.3, title_text=""))
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
+    # Sem barra de ferramentas do Plotly: evita sobreposição com o título em ecrãs estreitos.
+    st.plotly_chart(fig, config={"displayModeBar": False}, **LARGURA)
+
+
+def _barras(contagem: pd.DataFrame, categoria: str, titulo: str, cor: str) -> None:
+    """Barras horizontais com o valor escrito na barra — legíveis em qualquer largura de ecrã."""
+    contagem = contagem.copy()
+    # Nomes compridos são encurtados para não roubarem espaço às barras.
+    contagem[categoria] = contagem[categoria].astype(str).apply(lambda s: s if len(s) <= 26 else s[:25] + "…")
+    fig = px.bar(contagem, x="Candidatos", y=categoria, orientation="h", text="Candidatos",
+                 title=titulo, color_discrete_sequence=[cor])
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(title=None)
+    fig.update_layout(height=max(260, 70 + 34 * len(contagem)))
+    _grafico(fig)
 
 
 def pagina_dashboard(df: pd.DataFrame) -> None:
@@ -450,8 +474,8 @@ def pagina_dashboard(df: pd.DataFrame) -> None:
     m[0].metric("Candidatos encontrados", len(df))
     m[1].metric("Aprovados pela IA", int(df["recomendacao"].isin(RECOMENDACOES[:2]).sum()),
                 help="Recomendação «Contactar» ou «Contactar imediatamente».")
-    m[2].metric("Score superior a 80%", int((df["score"] > 80).sum()))
-    m[3].metric("Disponíveis imediatamente", int(
+    m[2].metric("Score acima de 80%", int((df["score"] > 80).sum()))
+    m[3].metric("Disponíveis já", int(
         ((df["disponibilidade_imediata"] == "Sim") | (df["disponibilidade_classificacao"] == "Confirmada")).sum()))
     m = st.columns(4)
     m[0].metric("Contactados", int(contactados))
@@ -467,27 +491,26 @@ def pagina_dashboard(df: pd.DataFrame) -> None:
         if not esp.empty:
             contagem = esp.value_counts().head(12).sort_values().reset_index()
             contagem.columns = ["Especialidade", "Candidatos"]
-            _grafico(px.bar(contagem, x="Candidatos", y="Especialidade", orientation="h",
-                            title="Candidatos por especialidade", color_discrete_sequence=[CIANO]))
+            _barras(contagem, "Especialidade", "Candidatos por especialidade", CIANO)
     with c2:
         local = ativos["concelho"].where(ativos["concelho"].astype(bool), ativos["localizacao"])
         local = local.replace("", "Não identificada").fillna("Não identificada")
-        contagem = local.value_counts().head(12).reset_index()
+        contagem = local.value_counts().head(12).sort_values().reset_index()
         contagem.columns = ["Localização", "Candidatos"]
-        _grafico(px.bar(contagem, x="Localização", y="Candidatos", title="Candidatos por localização",
-                        color_discrete_sequence=[AZUL_ESCURO]))
+        _barras(contagem, "Localização", "Candidatos por localização", AZUL_ESCURO)
 
     c1, c2 = st.columns(2)
     with c1:
-        fig = px.histogram(df, x="score", nbins=10, title="Distribuição dos scores",
-                           labels={"score": "Score (%)"}, color_discrete_sequence=[CIANO])
-        fig.update_layout(yaxis_title="Candidatos", bargap=0.08)
-        _grafico(fig)
+        faixas = pd.cut(df["score"], bins=[-1, 20, 40, 60, 80, 100],
+                        labels=["0–20%", "21–40%", "41–60%", "61–80%", "81–100%"])
+        contagem = faixas.value_counts().reindex(["81–100%", "61–80%", "41–60%", "21–40%", "0–20%"][::-1])
+        contagem = contagem.fillna(0).astype(int).reset_index()
+        contagem.columns = ["Score", "Candidatos"]
+        _barras(contagem, "Score", "Distribuição dos scores", CIANO)
     with c2:
-        contagem = df["estado"].value_counts().reindex(ESTADOS).dropna().reset_index()
+        contagem = df["estado"].value_counts().reindex(ESTADOS[::-1]).dropna().astype(int).reset_index()
         contagem.columns = ["Estado", "Candidatos"]
-        _grafico(px.bar(contagem, x="Estado", y="Candidatos", title="Candidatos por estado",
-                        color="Estado", color_discrete_sequence=PALETA))
+        _barras(contagem, "Estado", "Candidatos por estado", AZUL_ESCURO)
 
     try:
         pesquisas = db.listar_pesquisas_df()
@@ -502,6 +525,8 @@ def pagina_dashboard(df: pd.DataFrame) -> None:
         fig = px.line(evolucao, x="Dia", y="Total", color="Indicador", markers=True,
                       title="Evolução das pesquisas ao longo do tempo",
                       color_discrete_sequence=[AZUL_ESCURO, CIANO])
+        fig.update_xaxes(title=None, tickformat="%d/%m", tickangle=0, dtick=86400000)
+        fig.update_yaxes(title=None)
         _grafico(fig, legenda=True)
 
 
