@@ -46,7 +46,6 @@ from models import (  # noqa: E402
     TIPOS_CONTRATACAO,
     TODAS_ESPECIALIDADES,
     TRI_ESTADO,
-    URGENCIAS,
     CandidatoIA,
 )
 from search_engine import ErroPesquisa, executar_pesquisa, gerar_consultas  # noqa: E402
@@ -64,7 +63,7 @@ from utils import (  # noqa: E402
     validar_password,
 )
 
-st.set_page_config(page_title=NOME_APP, page_icon="❄️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title=NOME_APP, page_icon=":material/ac_unit:", layout="wide", initial_sidebar_state="expanded")
 
 # Compatibilidade entre versões do Streamlit para "ocupar toda a largura".
 _VERSAO = tuple(int(p) for p in st.__version__.split(".")[:2])
@@ -74,13 +73,13 @@ AZUL_ESCURO, CIANO, VERDE, VERMELHO, CINZA = "#0B2545", "#13A8C9", "#1E9E6A", "#
 PALETA = [CIANO, AZUL_ESCURO, VERDE, "#5B7DB1", "#8ED1E0", "#F2A541", "#7A8CA3", VERMELHO]
 
 PAGINAS_POR_PERFIL = {
-    "Administrador": ["Dashboard", "Candidatos", "Pesquisa urgente", "Tarefas", "Contratações", "Administração"],
-    "Recrutador": ["Dashboard", "Candidatos", "Pesquisa urgente", "Tarefas"],
+    "Administrador": ["Dashboard", "Candidatos", "Serviço imediato", "Tarefas", "Contratações", "Administração"],
+    "Recrutador": ["Dashboard", "Candidatos", "Serviço imediato", "Tarefas"],
     "Gestor": ["Dashboard", "Candidatos", "Contratações", "Tarefas"],
 }
 ICONES_PAGINA = {
-    "Dashboard": "📊", "Candidatos": "👷", "Pesquisa urgente": "🚨",
-    "Tarefas": "✅", "Contratações": "🤝", "Administração": "⚙️",
+    "Dashboard": "dashboard", "Candidatos": "engineering", "Serviço imediato": "bolt",
+    "Tarefas": "task_alt", "Contratações": "handshake", "Administração": "settings",
 }
 
 
@@ -103,7 +102,22 @@ def aplicar_css() -> None:
         section[data-testid="stSidebar"] [data-testid="stExpander"] {{
             border: 1px solid rgba(255,255,255,.25); border-radius: 10px; }}
         section[data-testid="stSidebar"] button p {{ color: inherit !important; }}
-        section[data-testid="stSidebar"] button[kind="secondary"] p {{ color: {AZUL_ESCURO} !important; }}
+        [data-testid^="stBaseButton-secondary"], [data-testid^="stBaseLinkButton-secondary"] {{
+            background:#FFFFFF !important; color:{AZUL_ESCURO} !important;
+            border:1.5px solid {AZUL_ESCURO} !important; border-radius:10px !important;
+            font-weight:600 !important; opacity:1 !important; }}
+        [data-testid^="stBaseButton-secondary"]:hover, [data-testid^="stBaseLinkButton-secondary"]:hover {{
+            background:{AZUL_ESCURO} !important; color:#FFFFFF !important; }}
+        [data-testid^="stBaseButton-primary"], [data-testid^="stBaseLinkButton-primary"] {{
+            background:{CIANO} !important; color:#FFFFFF !important; border:1.5px solid {CIANO} !important;
+            border-radius:10px !important; font-weight:700 !important; }}
+        [data-testid^="stBaseButton-primary"]:hover, [data-testid^="stBaseLinkButton-primary"]:hover {{
+            background:#0E8FAC !important; border-color:#0E8FAC !important; }}
+        [data-testid^="stBaseButton"] p, [data-testid^="stBaseLinkButton"] p {{ font-weight:inherit; }}
+        [data-testid^="stBaseButton"]:disabled {{ background:#E6EBF1 !important; color:#7A8CA3 !important;
+            border-color:#C9D3DF !important; cursor:not-allowed; }}
+        section[data-testid="stSidebar"] [data-testid^="stBaseButton-secondary"] {{
+            border-color:#FFFFFF !important; }}
         .logo-app {{ display:flex; align-items:center; gap:.6rem; margin-bottom:.4rem; }}
         .logo-app .icone {{ font-size: 2rem; background:{CIANO}; border-radius:12px;
             width:48px; height:48px; display:flex; align-items:center; justify-content:center; }}
@@ -173,8 +187,8 @@ def utilizador_atual() -> dict:
 
 
 def chave_api(nome: str) -> str:
-    """Chave introduzida na sessão (não é guardada em disco) ou, em alternativa, a do .env."""
-    return (st.session_state.get(f"chave_{nome}") or "").strip() or obter_variavel(nome)
+    """Chave configurada no servidor (Secrets do alojamento ou ficheiro .env)."""
+    return obter_variavel(nome)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +197,7 @@ def chave_api(nome: str) -> str:
 
 def ecra_autenticacao() -> None:
     """Primeiro acesso: cria o administrador. Acessos seguintes: início de sessão."""
-    cabecalho(f"❄️ {NOME_APP}", "Plataforma interna de recrutamento de técnicos de AVAC e refrigeração")
+    cabecalho(NOME_APP, "Plataforma interna de recrutamento de técnicos e engenheiros de AVAC e refrigeração")
     _, centro, _ = st.columns([1, 1.3, 1])
     with centro:
         try:
@@ -230,7 +244,7 @@ def ecra_autenticacao() -> None:
                     else:
                         time.sleep(1.5)  # abranda tentativas repetidas
                         st.error("Email ou palavra-passe incorretos, ou conta inativa.")
-        st.caption("🔒 Acesso reservado a colaboradores autorizados. Os dados tratados nesta "
+        st.caption("Acesso reservado a colaboradores autorizados. Os dados tratados nesta "
                    "aplicação estão sujeitos ao RGPD.")
 
 
@@ -240,7 +254,7 @@ def ecra_autenticacao() -> None:
 
 _OMISSOES_PESQUISA = {
     "f_especialidades": [], "f_localizacoes": ["Grande Lisboa"], "f_outra": "", "f_raio": 30,
-    "f_disponibilidade": [], "f_tipo": TIPOS_CONTRATACAO[0], "f_urgencia": URGENCIAS[0],
+    "f_disponibilidade": [], "f_tipo": TIPOS_CONTRATACAO[0],
     "f_max": 20, "f_fgas": False,
 }
 
@@ -258,21 +272,21 @@ def barra_lateral() -> str:
 
     with st.sidebar:
         st.markdown(
-            '<div class="logo-app"><div class="icone">❄️</div><div>'
+            '<div class="logo-app"><div class="icone"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M20.7 7L3.3 17M12 5.5l-2.2-2.2M12 5.5l2.2-2.2M12 18.5l-2.2 2.2M12 18.5l2.2 2.2"/></svg></div><div>'
             f'<div class="nome">{html.escape(NOME_APP)}</div>'
             '<div class="sub">Recrutamento técnico com IA</div></div></div>',
             unsafe_allow_html=True,
         )
-        st.caption(f"👤 {u['nome']} · {u['perfil']}")
+        st.caption(f"{u['nome']} · {u['perfil']}")
         pagina = st.radio(
             "Navegação", PAGINAS_POR_PERFIL[u["perfil"]],
-            format_func=lambda p: f"{ICONES_PAGINA[p]}  {p}", key="pagina", label_visibility="collapsed",
+            format_func=lambda p: f":material/{ICONES_PAGINA[p]}: {p}", key="pagina", label_visibility="collapsed",
         )
         st.divider()
 
         if pode_pesquisar:
-            st.subheader("🔎 Prospeção")
-            st.button("➕ Nova pesquisa", on_click=_nova_pesquisa, **LARGURA,
+            st.subheader("Procurar profissionais")
+            st.button("Limpar critérios", icon=":material/restart_alt:", on_click=_nova_pesquisa, **LARGURA,
                       help="Limpa os critérios para começar uma pesquisa nova.")
             st.multiselect("Especialidades", TODAS_ESPECIALIDADES, key="f_especialidades",
                            placeholder="Escolha uma ou mais",
@@ -284,25 +298,11 @@ def barra_lateral() -> str:
             st.multiselect("Disponibilidade", DISPONIBILIDADES, key="f_disponibilidade",
                            placeholder="Qualquer")
             st.selectbox("Tipo de contratação", TIPOS_CONTRATACAO, key="f_tipo")
-            st.select_slider("Urgência", URGENCIAS, key="f_urgencia")
             st.checkbox("Exigir certificação F-Gas", key="f_fgas")
             st.slider("Número máximo de resultados", 5, 50, key="f_max", step=5,
                       help="Resultados de pesquisa analisados pela IA. Mais resultados = mais tempo e custo.")
 
-            # Com as chaves configuradas no servidor, os utilizadores não precisam de as ver.
-            nomes_chaves = ("ANTHROPIC_API_KEY", "TAVILY_API_KEY")
-            if not all(obter_variavel(n) for n in nomes_chaves):
-                with st.expander("🔑 Chaves API", expanded=True):
-                    for nome in nomes_chaves:
-                        if obter_variavel(nome):
-                            continue
-                        st.text_input(nome, type="password", key=f"chave_{nome}", autocomplete="off",
-                                      placeholder="Cole aqui a chave")
-                        st.caption("✅ Chave disponível" if chave_api(nome) else "⚠️ Chave em falta")
-                    st.caption("As chaves ficam apenas na memória desta sessão; nunca são mostradas "
-                               "nem guardadas na base de dados.")
-
-            if st.button("🚀 Iniciar prospeção com IA", type="primary", **LARGURA):
+            if st.button("Procurar profissionais", icon=":material/search:", type="primary", **LARGURA):
                 st.session_state["pedido_pesquisa"] = {
                     "especialidades": st.session_state["f_especialidades"],
                     "localizacoes": st.session_state["f_localizacoes"],
@@ -310,10 +310,9 @@ def barra_lateral() -> str:
                     "raio_km": st.session_state["f_raio"],
                     "disponibilidade": st.session_state["f_disponibilidade"],
                     "tipo_contratacao": st.session_state["f_tipo"],
-                    "urgencia": st.session_state["f_urgencia"],
                     "exige_fgas": st.session_state["f_fgas"],
                     "max_resultados": st.session_state["f_max"],
-                    "urgente": st.session_state["f_urgencia"] != "Normal",
+                    "urgente": True,
                 }
             st.divider()
 
@@ -333,13 +332,15 @@ def executar_prospecao(parametros: dict) -> None:
     u = utilizador_atual()
     em_falta = [n for n in ("TAVILY_API_KEY", "ANTHROPIC_API_KEY") if not chave_api(n)]
     if em_falta:
-        st.error("Chave API em falta: " + " e ".join(em_falta) +
-                 ". Introduza-a em «🔑 Chaves API», na barra lateral, ou no ficheiro .env.")
+        st.error("Chave API em falta no servidor: " + " e ".join(em_falta) +
+                 ". O administrador deve configurá-la nos «Secrets» do alojamento (ou no ficheiro .env).")
         return
 
-    limite_consultas = {"Normal": 6, "Urgente": 8, "Muito urgente": 10}.get(parametros.get("urgencia"), 6)
-    consultas = gerar_consultas(parametros, limite_consultas)
+    # Todas as pesquisas são tratadas como urgentes: número máximo de consultas.
+    consultas = gerar_consultas(parametros, 10)
     criterios = {k: v for k, v in parametros.items() if k not in ("max_resultados", "urgente")}
+    criterios["prioridade"] = ("Alta. A necessidade é urgente: privilegiar profissionais com "
+                               "disponibilidade imediata e contacto direto.")
 
     try:
         pesquisa_id = db.registar_pesquisa(u["nome"], parametros, consultas, bool(parametros.get("urgente")))
@@ -349,7 +350,7 @@ def executar_prospecao(parametros: dict) -> None:
 
     with st.status("A procurar profissionais…", expanded=True) as estado:
         # 1) Pesquisa em fontes públicas
-        st.write(f"🔎 {len(consultas)} consultas geradas a partir dos critérios.")
+        st.write(f"{len(consultas)} consultas geradas a partir dos critérios.")
         barra = st.progress(0.0, text="A pesquisar em fontes públicas…")
         try:
             resultados, avisos_pesquisa = executar_pesquisa(
@@ -374,7 +375,7 @@ def executar_prospecao(parametros: dict) -> None:
             st.warning("Nenhum resultado encontrado. Experimente alargar a localização, "
                        "reduzir os requisitos ou escolher outras especialidades.")
             return
-        st.write(f"📄 {len(resultados)} resultados únicos encontrados.")
+        st.write(f"{len(resultados)} resultados únicos encontrados.")
 
         # 2) Análise pela IA
         barra_ia = st.progress(0.0, text="A analisar perfis com IA…")
@@ -420,7 +421,7 @@ def executar_prospecao(parametros: dict) -> None:
         st.warning(f"Foram analisados {len(resultados)} resultados, mas nenhum corresponde a um "
                    "profissional individual (empresas, anúncios e diretórios são ignorados).")
         return
-    st.success(f"✅ {novos} novos candidatos guardados · {duplicados} já existiam (duplicados ignorados) · "
+    st.success(f"{novos} novos candidatos guardados · {duplicados} já existiam (duplicados ignorados) · "
                f"{len(descartados)} resultados descartados. Consulte-os na página «Candidatos».")
 
 
@@ -436,9 +437,9 @@ def _grafico(fig, legenda: bool = False) -> None:
 
 
 def pagina_dashboard(df: pd.DataFrame) -> None:
-    cabecalho("📊 Dashboard", "Visão geral da prospeção e do processo de recrutamento")
+    cabecalho("Dashboard", "Visão geral da prospeção e do processo de recrutamento")
     if df.empty:
-        st.info("Ainda não existem candidatos. Use «🚀 Iniciar prospeção com IA», na barra lateral, "
+        st.info("Ainda não existem candidatos. Use «Procurar profissionais», na barra lateral, "
                 "para encontrar os primeiros profissionais.")
         return
 
@@ -541,14 +542,15 @@ def mostrar_detalhe(candidato_id: int) -> None:
         etiquetas += etiqueta("F-Gas", "verde")
     st.markdown(
         f'<div class="cartao"><h3>{html.escape(c["nome"])}</h3>'
-        f'<div class="linha">🔧 {html.escape(esp)}</div>'
-        f'<div class="linha">📍 {html.escape(local)}</div>{etiquetas}</div>',
+        f'<div class="linha">{html.escape(esp)}</div>'
+        f'<div class="linha">{html.escape(local)}</div>{etiquetas}</div>',
         unsafe_allow_html=True,
     )
 
-    nomes_abas = ["👤 Perfil", "📞 Contacto", "🗂️ Processo", "📝 Notas e tarefas", "🤝 Entrevistas e contratação"]
+    nomes_abas = [":material/person: Perfil", ":material/call: Contacto", ":material/folder_open: Processo",
+                  ":material/edit_note: Notas e tarefas", ":material/handshake: Entrevistas e contratação"]
     if perfil == "Administrador":
-        nomes_abas.append("🛡️ Dados e RGPD")
+        nomes_abas.append(":material/shield: Dados e RGPD")
     abas = st.tabs(nomes_abas)
 
     # ----- Perfil -----
@@ -567,8 +569,7 @@ def mostrar_detalhe(candidato_id: int) -> None:
             colunas = st.columns(3)
             for indice, (chave, rotulo) in enumerate(AREAS_EXPERIENCIA.items()):
                 valor = experiencias.get(chave, "Não identificado")
-                simbolo = {"Sim": "✅", "Não": "❌"}.get(valor, "❔")
-                colunas[indice % 3].markdown(f"{simbolo} {rotulo}")
+                colunas[indice % 3].markdown(f"{rotulo}: **{valor}**")
         with st.expander("Competências"):
             _linhas_lista(c["competencias"])
         with st.expander("Certificações e mobilidade"):
@@ -608,17 +609,18 @@ def mostrar_detalhe(candidato_id: int) -> None:
 
         st.markdown("**Abrir canal de contacto** — o contacto é feito diretamente por si.")
         ligacoes = [
-            ("🔗 Perfil original", url_segura(c["url_perfil"]) or url_segura(c["url_fonte"])),
-            ("✉️ Email", link_mailto(c["email"], "Oportunidade profissional", "")),
-            ("💬 WhatsApp", link_whatsapp(c["telefone"], "")),
-            ("📞 Telefonar", link_telefone(c["telefone"])),
+            ("Abrir perfil original", ":material/open_in_new:",
+             url_segura(c["url_perfil"]) or url_segura(c["url_fonte"])),
+            ("Enviar email", ":material/mail:", link_mailto(c["email"], "Oportunidade profissional", "")),
+            ("Abrir WhatsApp", ":material/chat:", link_whatsapp(c["telefone"], "")),
+            ("Telefonar", ":material/call:", link_telefone(c["telefone"])),
         ]
-        colunas = st.columns(4)
-        for coluna, (rotulo, destino) in zip(colunas, ligacoes):
-            if destino:
-                coluna.link_button(rotulo, destino, **LARGURA)
-            else:
-                coluna.button(rotulo, disabled=True, key=f"{k}_{rotulo}", **LARGURA)
+        disponiveis = [ligacao for ligacao in ligacoes if ligacao[2]]
+        if disponiveis:
+            for coluna, (rotulo, icone, destino) in zip(st.columns(4), disponiveis):
+                coluna.link_button(rotulo, destino, icon=icone, **LARGURA)
+        else:
+            st.caption("Este candidato não tem contactos nem perfil público registados.")
 
         if not gestor:
             st.divider()
@@ -825,12 +827,12 @@ def mostrar_detalhe(candidato_id: int) -> None:
             st.markdown("**Decisão e contratação**")
             if perfil in ("Administrador", "Gestor"):
                 x, y = st.columns(2)
-                if x.button("✅ Aprovar candidato", key=f"{k}_aprovar", **LARGURA,
+                if x.button("Aprovar candidato", icon=":material/check:", key=f"{k}_aprovar", **LARGURA,
                             disabled=c["estado"] in ("Aprovado", "Contratado")):
                     db.atualizar_candidato(candidato_id, {"estado": "Aprovado"}, u["nome"])
                     avisar("Candidato aprovado.")
                     st.rerun()
-                if y.button("❌ Rejeitar candidato", key=f"{k}_rejeitar", **LARGURA,
+                if y.button("Rejeitar candidato", icon=":material/close:", key=f"{k}_rejeitar", **LARGURA,
                             disabled=c["estado"] in ("Rejeitado", "Contratado")):
                     db.atualizar_candidato(candidato_id, {"estado": "Rejeitado"}, u["nome"])
                     avisar("Candidato rejeitado.", "info")
@@ -849,7 +851,7 @@ def mostrar_detalhe(candidato_id: int) -> None:
                         try:
                             db.registar_contratacao(candidato_id, data_c, data_i, funcao, contrato,
                                                     remuneracao, obs, u["nome"])
-                            avisar(f"Contratação de {c['nome']} registada. 🎉")
+                            avisar(f"Contratação de {c['nome']} registada.")
                             st.rerun()
                         except ErroBaseDados as exc:
                             st.error(str(exc))
@@ -911,7 +913,7 @@ def listar_tarefas_interativas(tarefas: list[dict], prefixo: str, mostrar_candid
         if t["data_limite"]:
             rotulo += f" · {formatar_data(t['data_limite'])}"
         if atrasada:
-            rotulo = "🔴 " + rotulo
+            rotulo = "Em atraso — " + rotulo
         marcada = st.checkbox(rotulo, value=t["concluida"], key=f"{prefixo}_{t['id']}")
         if marcada != t["concluida"]:
             try:
@@ -927,7 +929,7 @@ def listar_tarefas_interativas(tarefas: list[dict], prefixo: str, mostrar_candid
 
 def _filtrar_candidatos(df: pd.DataFrame) -> pd.DataFrame:
     """Painel de filtros da lista de candidatos."""
-    with st.expander("🔍 Filtros", expanded=True):
+    with st.expander("Filtros", icon=":material/filter_list:", expanded=True):
         a, b, c, d = st.columns(4)
         especialidades = sorted({e for lista in df["especialidades"] for e in (lista or []) if e})
         f_esp = a.multiselect("Especialidade", especialidades, placeholder="Todas")
@@ -946,8 +948,7 @@ def _filtrar_candidatos(df: pd.DataFrame) -> pd.DataFrame:
         f_datas = a.date_input("Data da pesquisa (intervalo)",
                                value=(min(datas), max(datas)) if datas else (),
                                format="DD/MM/YYYY")
-        f_ultima = b.checkbox("Apenas a última pesquisa",
-                              disabled=not st.session_state.get("ids_ultima_pesquisa"))
+        f_ultima = bool(st.session_state.get("ids_ultima_pesquisa")) and b.checkbox("Apenas a última pesquisa")
         f_arquivados = c.checkbox("Mostrar arquivados")
 
     filtrado = df
@@ -1014,14 +1015,14 @@ def _tabela_candidatos(df: pd.DataFrame, chave: str, colunas_extra: dict | None 
 def _botoes_exportacao(df: pd.DataFrame) -> None:
     a, b, c, _ = st.columns([1, 1, 1, 3])
     for coluna, rotulo, funcao, extensao, mime in (
-        (a, "⬇️ CSV", exportar_csv, "csv", "text/csv"),
-        (b, "⬇️ Excel", exportar_excel, "xlsx",
+        (a, "Exportar CSV", exportar_csv, "csv", "text/csv"),
+        (b, "Exportar Excel", exportar_excel, "xlsx",
          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-        (c, "⬇️ PDF", exportar_pdf, "pdf", "application/pdf"),
+        (c, "Exportar PDF", exportar_pdf, "pdf", "application/pdf"),
     ):
         try:
             coluna.download_button(rotulo, funcao(df), nome_ficheiro_exportacao(extensao), mime,
-                                   key=f"exp_{extensao}", **LARGURA)
+                                   key=f"exp_{extensao}", icon=":material/download:", **LARGURA)
         except ErroExportacao as exc:
             coluna.error(str(exc))
 
@@ -1035,7 +1036,7 @@ def _abrir_detalhe_selecionado(selecionado) -> None:
         st.divider()
         a, b = st.columns([5, 1])
         a.subheader("Detalhes do candidato")
-        if b.button("✖ Fechar detalhes", **LARGURA):
+        if b.button("Fechar detalhes", icon=":material/close:", **LARGURA):
             st.session_state.pop("candidato_aberto", None)
             st.session_state["versao_tabela"] = st.session_state.get("versao_tabela", 0) + 1
             st.rerun()
@@ -1044,7 +1045,7 @@ def _abrir_detalhe_selecionado(selecionado) -> None:
 
 def pagina_candidatos(df: pd.DataFrame) -> None:
     u = utilizador_atual()
-    cabecalho("👷 Candidatos", "Pesquise, filtre, contacte e acompanhe cada profissional")
+    cabecalho("Candidatos", "Pesquise, filtre, contacte e acompanhe cada profissional")
     if u["perfil"] == "Gestor":
         df = df[df["estado"].isin(ESTADOS_GESTOR)]
         st.caption("Perfil de gestor: são apresentados os candidatos em fase de entrevista, "
@@ -1070,7 +1071,7 @@ def pagina_candidatos(df: pd.DataFrame) -> None:
 def _formulario_candidato_manual() -> None:
     """Permite registar um candidato que chegou por outra via (telefone, referência…)."""
     u = utilizador_atual()
-    with st.expander("➕ Adicionar candidato manualmente"):
+    with st.expander("Adicionar candidato manualmente", icon=":material/person_add:"):
         with st.form("candidato_manual", clear_on_submit=True):
             a, b = st.columns(2)
             nome = a.text_input("Nome completo")
@@ -1110,7 +1111,7 @@ def _formulario_candidato_manual() -> None:
 
 def pagina_urgente(df: pd.DataFrame) -> None:
     u = utilizador_atual()
-    cabecalho("🚨 Pesquisa urgente", "Encontre rapidamente quem pode começar já")
+    cabecalho("Serviço imediato", "Indique o serviço e veja quem pode começar já")
     with st.form("urgente"):
         a, b, c = st.columns(3)
         especialidades = a.multiselect("Especialidade necessária", TODAS_ESPECIALIDADES,
@@ -1131,8 +1132,8 @@ def pagina_urgente(df: pd.DataFrame) -> None:
         viatura = b.checkbox("Exige viatura própria")
         fgas = c.checkbox("Exige certificação F-Gas")
         a, b = st.columns(2)
-        ordenar = a.form_submit_button("⚡ Procurar na base de candidatos", type="primary", **LARGURA)
-        procurar = b.form_submit_button("🚀 Procurar novos candidatos com IA", **LARGURA,
+        ordenar = a.form_submit_button("Ver candidatos disponíveis", icon=":material/bolt:", type="primary", **LARGURA)
+        procurar = b.form_submit_button("Procurar novos profissionais", icon=":material/search:", **LARGURA,
                                         disabled=u["perfil"] == "Gestor")
 
     local_servico = outra.strip() or local
@@ -1150,7 +1151,7 @@ def pagina_urgente(df: pd.DataFrame) -> None:
             "localizacoes": ["Outra localização"] if outra.strip() else [local],
             "outra_localizacao": outra.strip(), "raio_km": raio,
             "disponibilidade": disponibilidade, "tipo_contratacao": contratacao,
-            "urgencia": "Muito urgente", "exige_fgas": fgas, "exige_viatura": viatura,
+            "exige_fgas": fgas, "exige_viatura": viatura,
             "data_inicio": inicio.isoformat(), "horario": horario, "duracao_prevista": duracao,
             "orcamento": orcamento, "max_resultados": 20, "urgente": True,
         }
@@ -1158,8 +1159,8 @@ def pagina_urgente(df: pd.DataFrame) -> None:
 
     pedido = st.session_state.get("pedido_urgente")
     if not pedido:
-        st.info("Preencha a necessidade e escolha «Procurar na base de candidatos» para uma resposta "
-                "imediata, ou «Procurar novos candidatos com IA» para alargar a pesquisa.")
+        st.info("Preencha a necessidade e escolha «Ver candidatos disponíveis» para uma resposta "
+                "imediata, ou «Procurar novos profissionais» para alargar a pesquisa.")
         return
 
     ativos = df[~df["estado"].isin(["Arquivado", "Rejeitado", "Contratado"])]
@@ -1168,7 +1169,7 @@ def pagina_urgente(df: pd.DataFrame) -> None:
     ordenado = ordenado[ordenado["prioridade"] > 0].head(pedido["maximo"])
     if ordenado.empty:
         st.warning("Nenhum candidato na base de dados cumpre esta necessidade. "
-                   "Use «Procurar novos candidatos com IA».")
+                   "Use «Procurar novos profissionais».")
         return
 
     st.markdown(f"**{len(ordenado)} candidatos por ordem de prioridade** para {html.escape(pedido['local'])} "
@@ -1186,7 +1187,7 @@ def pagina_urgente(df: pd.DataFrame) -> None:
 
 def pagina_tarefas() -> None:
     u = utilizador_atual()
-    cabecalho("✅ Tarefas", "Lembretes e ações de acompanhamento")
+    cabecalho("Tarefas", "Lembretes e ações de acompanhamento")
     with st.form("nova_tarefa", clear_on_submit=True):
         a, b, c = st.columns([3, 1, 1])
         titulo = a.text_input("Nova tarefa", placeholder="Ex.: Ligar aos candidatos de Sintra")
@@ -1224,7 +1225,7 @@ def pagina_tarefas() -> None:
 # ---------------------------------------------------------------------------
 
 def pagina_contratacoes(df: pd.DataFrame) -> None:
-    cabecalho("🤝 Contratações", "Candidatos em decisão, entrevistas e contratações concluídas")
+    cabecalho("Contratações", "Candidatos em decisão, entrevistas e contratações concluídas")
     abas = st.tabs(["Em processo de contratação", "Entrevistas", "Contratações concluídas"])
     with abas[0]:
         em_processo = df[df["estado"].isin(["Entrevista marcada", "Em avaliação técnica", "Aprovado", "Em negociação"])]
@@ -1295,7 +1296,7 @@ responsável pela proteção de dados da empresa.
 
 def pagina_administracao() -> None:
     u = utilizador_atual()
-    cabecalho("⚙️ Administração", "Utilizadores, pesquisas, auditoria e proteção de dados")
+    cabecalho("Administração", "Utilizadores, pesquisas, auditoria e proteção de dados")
     abas = st.tabs(["Utilizadores", "Pesquisas realizadas", "Fontes consultadas", "Histórico de alterações", "RGPD"])
 
     with abas[0]:
@@ -1362,8 +1363,7 @@ def pagina_administracao() -> None:
                     lambda p: f"{lista_para_texto((p or {}).get('especialidades')) or 'Geral'} · "
                               f"{lista_para_texto((p or {}).get('localizacoes'))}")
                 st.dataframe(pesquisas.drop(columns=["parametros"]).rename(columns={
-                    "id": "N.º", "data": "Data", "utilizador": "Utilizador", "urgente": "Urgente",
-                    "total_resultados": "Resultados", "total_candidatos": "Candidatos",
+                    "id": "N.º", "data": "Data", "utilizador": "Utilizador",                     "total_resultados": "Resultados", "total_candidatos": "Candidatos",
                     "novos": "Novos", "duplicados": "Duplicados"}),
                     hide_index=True, **LARGURA,
                     column_config={"Data": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm")})
@@ -1454,7 +1454,7 @@ def main() -> None:
             pagina_dashboard(df)
         elif pagina == "Candidatos":
             pagina_candidatos(df)
-        elif pagina == "Pesquisa urgente":
+        elif pagina == "Serviço imediato":
             pagina_urgente(df)
         elif pagina == "Tarefas":
             pagina_tarefas()

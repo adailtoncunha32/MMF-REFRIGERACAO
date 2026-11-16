@@ -160,7 +160,7 @@ administrador. Os restantes utilizadores são criados em **Administração → U
 
 1. Na barra lateral, escolha especialidades, localização, raio, disponibilidade, tipo de contratação,
    urgência e número máximo de resultados.
-2. Clique em **🚀 Iniciar prospeção com IA**.
+2. Clique em **Procurar profissionais**.
 3. Acompanhe o progresso. No fim, a aplicação indica quantos candidatos são novos, quantos eram
    duplicados e quantos resultados foram descartados (empresas, anúncios, diretórios…).
 4. Em **Candidatos**, assinale «Apenas a última pesquisa» para ver só os resultados novos.
@@ -218,7 +218,7 @@ Defina `DATABASE_URL` no `.env` (ver `.env.example`) e instale o controlador
 
 | Problema | Solução |
 |---|---|
-| «Chave API em falta» | Preencha o `.env` ou cole a chave em **🔑 Chaves API** e repita a pesquisa. |
+| «Chave API em falta» | Preencha o `.env` ou configure a chave nos Secrets do alojamento. |
 | «A chave … é inválida» | Confirme que copiou a chave completa, sem espaços, e que está ativa. |
 | «Limite de pedidos excedido» | Aguarde um minuto; reduza o número máximo de resultados ou reveja o seu plano. |
 | «Nenhum resultado encontrado» | Alargue a localização, retire requisitos ou escolha especialidades mais gerais. |
