@@ -336,8 +336,8 @@ def ecra_autenticacao() -> None:
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
-            email = st.text_input("Email", placeholder="nome@empresa.pt")
-            password = st.text_input("Palavra-passe", type="password", placeholder="••••••••")
+            email = st.text_input("Email")
+            password = st.text_input("Palavra-passe", type="password")
             if st.form_submit_button("Entrar", icon=":material/login:", type="primary", **LARGURA):
                 try:
                     utilizador = db.autenticar(email, password)
