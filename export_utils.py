@@ -27,7 +27,7 @@ COLUNAS_EXPORTACAO: dict[str, str] = {
     "concelho": "Concelho",
     "distrito": "Distrito",
     "anos_experiencia": "Anos de experiência",
-    "score": "Score (%)",
+    "score": "Pontuação (%)",
     "nivel_confianca": "Confiança (%)",
     "recomendacao": "Recomendação da IA",
     "disponibilidade_classificacao": "Disponibilidade",
@@ -132,7 +132,7 @@ def exportar_pdf(df: pd.DataFrame) -> bytes:
 
         colunas = [
             ("nome", "Nome", 52, 34), ("especialidades", "Especialidade", 62, 44),
-            ("localizacao", "Localização", 38, 26), ("score", "Score", 14, 5),
+            ("localizacao", "Localização", 38, 26), ("score", "Pontuação", 18, 5),
             ("disponibilidade_classificacao", "Disponib.", 24, 16),
             ("certificacao_fgas", "F-Gas", 20, 14), ("estado", "Estado", 32, 22),
             ("contacto", "Contacto", 35, 26),

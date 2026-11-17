@@ -152,7 +152,7 @@ A aplicação abre em <http://localhost:8501>. O primeiro administrador é criad
 
 ## Como utilizar o dashboard
 
-- **📊 Dashboard** — indicadores (candidatos encontrados, aprovados pela IA, score > 80 %, disponíveis
+- **Painel** — trabalho do dia: quem contactar primeiro, quem voltar a contactar, tarefas e entrevistas. Os gráficos estão em **Administração → Estatísticas**. (Antes: indicadores, disponíveis
   imediatamente, contactados, entrevistas, contratados, score médio) e gráficos interativos por
   especialidade, localização, score, estado e evolução das pesquisas.
 - **👷 Candidatos** — tabela com filtros; clique numa linha para abrir os detalhes.

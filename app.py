@@ -75,12 +75,12 @@ AZUL_ESCURO, CIANO, VERDE, VERMELHO, CINZA = "#0B2545", "#13A8C9", "#1E9E6A", "#
 PALETA = [CIANO, AZUL_ESCURO, VERDE, "#5B7DB1", "#8ED1E0", "#F2A541", "#7A8CA3", VERMELHO]
 
 PAGINAS_POR_PERFIL = {
-    "Administrador": ["Dashboard", "Candidatos", "Serviço imediato", "Tarefas", "Contratações", "Administração"],
-    "Recrutador": ["Dashboard", "Candidatos", "Serviço imediato", "Tarefas"],
-    "Gestor": ["Dashboard", "Candidatos", "Contratações", "Tarefas"],
+    "Administrador": ["Painel", "Candidatos", "Serviço imediato", "Tarefas", "Contratações", "Administração"],
+    "Recrutador": ["Painel", "Candidatos", "Serviço imediato", "Tarefas"],
+    "Gestor": ["Painel", "Candidatos", "Contratações", "Tarefas"],
 }
 ICONES_PAGINA = {
-    "Dashboard": "dashboard", "Candidatos": "engineering", "Serviço imediato": "bolt",
+    "Painel": "dashboard", "Candidatos": "engineering", "Serviço imediato": "bolt",
     "Tarefas": "task_alt", "Contratações": "handshake", "Administração": "settings",
 }
 
@@ -153,21 +153,38 @@ def aplicar_css() -> None:
         .et-escura {{ background:{AZUL_ESCURO}; color:#fff; }}
         div[data-testid="stExpander"] {{ background:#fff; border-radius:12px; }}
         .stTabs [data-baseweb="tab"] {{ font-weight:600; }}
+        /* ---------- Sem textos em inglês do Streamlit ---------- */
+        [data-testid="InputInstructions"] {{ display:none !important; }}
+        [data-testid="stElementToolbar"] {{ display:none !important; }}
+        /* ---------- Caixas ---------- */
+        div[data-testid="stVerticalBlockBorderWrapper"] {{ background:#fff; border-radius:14px; }}
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background:#F8FAFC; border-radius:10px; }}
+        /* ---------- Painel ---------- */
+        .funil {{ display:flex; align-items:stretch; gap:.4rem; background:#fff; border:1px solid #E1E8F0;
+            border-radius:14px; padding:.7rem .9rem; margin-bottom:1.2rem; }}
+        .funil-passo {{ flex:1; text-align:center; padding:.2rem 0; }}
+        .funil-passo b {{ display:block; font-size:1.45rem; color:{AZUL_ESCURO}; line-height:1.1; }}
+        .funil-passo span {{ color:#5B6B80; font-size:.8rem; }}
+        .funil-seta {{ color:#A9B7C6; font-size:1.4rem; display:flex; align-items:center; }}
+        .ln-topo {{ display:flex; align-items:baseline; gap:.6rem; }}
+        .ln-nome {{ font-weight:700; color:{AZUL_ESCURO}; }}
+        .ln-pont {{ background:{AZUL_ESCURO}; color:#fff; border-radius:999px; padding:0 .5rem;
+            font-size:.75rem; font-weight:700; }}
+        .ln-sub {{ color:#5B6B80; font-size:.84rem; }}
+        .ln-nota {{ color:#0B6E86; font-size:.8rem; font-weight:600; margin-top:.1rem; }}
         /* ---------- Login ---------- */
-        .login-marca {{ background: linear-gradient(150deg, {AZUL_ESCURO} 0%, #134074 55%, {CIANO} 140%);
-            border-radius:20px; padding:2.6rem 2.4rem; color:#fff; box-shadow:0 18px 40px rgba(11,37,69,.25); }}
-        .login-logo {{ width:64px; height:64px; border-radius:16px; background:#fff; display:flex;
-            align-items:center; justify-content:center; font-size:2.3rem; box-shadow:0 0 0 3px {CIANO}; }}
-        .login-marca h1 {{ color:#fff; font-size:2.1rem; margin:1.2rem 0 .4rem 0; padding:0; }}
-        .login-sub {{ color:#D6ECF3; font-size:1.02rem; line-height:1.5; margin-bottom:1.4rem; }}
-        .login-marca ul {{ list-style:none; padding:0; margin:0; }}
-        .login-marca li {{ display:flex; align-items:center; gap:.75rem; color:#fff; margin:.7rem 0;
-            font-size:.96rem; }}
-        .login-marca li span {{ width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,.16);
-            border:1px solid rgba(255,255,255,.35); display:flex; align-items:center; justify-content:center;
-            font-weight:700; font-size:.85rem; flex-shrink:0; }}
-        .login-titulo {{ font-size:1.5rem; font-weight:700; color:{AZUL_ESCURO}; }}
-        .login-texto {{ color:#5B6B80; font-size:.92rem; margin:.2rem 0 1rem 0; }}
+        .login-cabecalho {{ display:flex; align-items:center; gap:1rem; margin:.2rem 0 1.4rem 0; }}
+        .login-logo {{ width:58px; height:58px; border-radius:14px; background:#fff; display:flex;
+            align-items:center; justify-content:center; font-size:2rem; box-shadow:0 0 0 2px {CIANO};
+            flex-shrink:0; }}
+        .login-nome {{ font-size:1.6rem; font-weight:700; color:{AZUL_ESCURO}; line-height:1.2; }}
+        .login-texto {{ color:#5B6B80; font-size:.95rem; margin-top:.2rem; }}
+        div[data-testid="stForm"]:has(.login-cabecalho) {{ padding:2.2rem 2.2rem 1.8rem 2.2rem; }}
+        div[data-testid="stForm"]:has(.login-cabecalho) input {{ min-height:2.9rem; font-size:1rem; }}
+        div[data-testid="stForm"]:has(.login-cabecalho) button {{ min-height:3rem; font-size:1.02rem; }}
+        .st-key-link_guia {{ margin-top:.3rem; }}
+        .st-key-link_guia button p {{ color:{CIANO} !important; font-weight:600; }}
         div[data-testid="stForm"] {{ background:#fff; border:1px solid #E1E8F0 !important; border-radius:18px;
             padding:1.4rem 1.5rem 1.1rem 1.5rem; box-shadow:0 10px 30px rgba(11,37,69,.08); }}
         /* ---------- Cartões de candidato (grelha) ---------- */
@@ -261,29 +278,45 @@ def _criar_admin_inicial() -> bool:
     return db.contar_utilizadores() > 0
 
 
+GUIA_UTILIZACAO = """
+**1. Entrar** — use o email e a palavra-passe que o administrador lhe deu.
+
+**2. Procurar profissionais** — na barra lateral escolha as especialidades, a zona e o raio, e clique
+em **Procurar profissionais**. A pesquisa demora um a dois minutos e guarda os candidatos encontrados.
+
+**3. Ver os candidatos** — na página **Candidatos** cada profissional aparece num cartão com o score,
+a zona, a disponibilidade e o tipo de contacto. Use a pesquisa e os filtros rápidos para encontrar
+quem precisa (por exemplo, «Com contacto direto» ou «Disponíveis»).
+
+**4. Contactar** — clique em **Detalhes** e abra o separador **Contacto**:
+- com telefone ou email, use **Telefonar**, **Abrir WhatsApp** ou **Enviar email**;
+- sem contacto direto, use **Abrir perfil original** e envie mensagem pela plataforma (por exemplo, LinkedIn).
+
+Depois registe o contacto em **Registar contacto efetuado** e, se precisar, crie um lembrete.
+
+**5. Acompanhar** — no separador **Processo** atualize o estado (Contactado, Entrevista marcada,
+Aprovado…). Notas, tarefas e entrevistas ficam guardadas na ficha de cada candidato.
+
+**6. Serviço imediato** — para uma necessidade urgente, indique o serviço e a zona e veja primeiro quem
+pode começar já e está mais perto.
+
+**7. Exportar** — na página **Candidatos** exporte a lista filtrada para Excel, CSV ou PDF.
+
+Dúvidas de acesso ou palavra-passe esquecida: fale com um administrador da plataforma.
+"""
+
+
+@st.dialog("Como usar a plataforma", width="large")
+def _mostrar_guia() -> None:
+    st.markdown(GUIA_UTILIZACAO)
+
+
 def ecra_autenticacao() -> None:
     """Ecrã de início de sessão (não existe registo público)."""
-    st.markdown("<style>.block-container { max-width: 1100px; padding-top: 4.5rem; }</style>",
+    st.markdown("<style>.block-container { max-width: 1200px; padding-top: 6.5rem; }</style>",
                 unsafe_allow_html=True)
-    marca, formulario = st.columns([1.15, 1], gap="large", vertical_alignment="center")
-    with marca:
-        st.markdown(
-            f"""
-            <div class="login-marca">
-              <div class="login-logo">❄️</div>
-              <h1>{html.escape(NOME_APP)}</h1>
-              <p class="login-sub">Encontre técnicos e engenheiros de AVAC, refrigeração e climatização
-                 disponíveis — e acompanhe cada contacto até à contratação.</p>
-              <ul>
-                <li><span>1</span>Pesquisa de profissionais em fontes públicas</li>
-                <li><span>2</span>Classificação automática de cada perfil</li>
-                <li><span>3</span>Contactos, entrevistas e contratações num só lugar</li>
-              </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with formulario:
+    _, centro, _ = st.columns([1, 1.55, 1])
+    with centro:
         try:
             configurada = _criar_admin_inicial()
         except ErroBaseDados as exc:
@@ -296,9 +329,13 @@ def ecra_autenticacao() -> None:
             st.stop()
 
         with st.form("iniciar_sessao", border=True):
-            st.markdown('<div class="login-titulo">Iniciar sessão</div>'
-                        '<div class="login-texto">Use o email e a palavra-passe fornecidos pelo '
-                        'administrador.</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="login-cabecalho"><div class="login-logo">❄️</div>'
+                f'<div><div class="login-nome">{html.escape(NOME_APP)}</div>'
+                f'<div class="login-texto">Inicie sessão com os dados fornecidos pelo administrador.</div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
             email = st.text_input("Email", placeholder="nome@empresa.pt")
             password = st.text_input("Palavra-passe", type="password", placeholder="••••••••")
             if st.form_submit_button("Entrar", icon=":material/login:", type="primary", **LARGURA):
@@ -313,8 +350,10 @@ def ecra_autenticacao() -> None:
                 else:
                     time.sleep(1.5)  # abranda tentativas repetidas
                     st.error("Email ou palavra-passe incorretos, ou conta inativa.")
-        st.caption(":material/lock: Acesso reservado a colaboradores autorizados. Esqueceu-se da "
-                   "palavra-passe? Peça a um administrador para a alterar. Dados tratados segundo o RGPD.")
+
+        if st.button("Como usar a plataforma", icon=":material/help:", type="tertiary", key="link_guia",
+                     **LARGURA):
+            _mostrar_guia()
 
 
 # ---------------------------------------------------------------------------
@@ -530,29 +569,149 @@ def _barras(contagem: pd.DataFrame, categoria: str, titulo: str, cor: str) -> No
     _grafico(fig)
 
 
-def pagina_dashboard(df: pd.DataFrame) -> None:
-    cabecalho("Dashboard", "Visão geral da prospeção e do processo de recrutamento")
+ETAPAS_FUNIL = [("Novos", ["Novo", "Pré-selecionado", "Contacto pendente"]),
+                ("Contactados", ["Contactado", "Sem resposta"]),
+                ("Responderam", ["Respondeu"]),
+                ("Em entrevista", ["Entrevista marcada", "Em avaliação técnica"]),
+                ("Aprovados", ["Aprovado", "Em negociação"]),
+                ("Contratados", ["Contratado"])]
+
+
+def _linha_candidato(c: pd.Series, prefixo: str, nota: str = "") -> None:
+    """Linha compacta de candidato com ações diretas."""
+    esp = lista_para_texto((c["especialidades"] or [])[:1]) or c["cargo"] or "Especialidade não identificada"
+    local = c["concelho"] or c["localizacao"] or "Zona não identificada"
+    contacto = " · ".join(n for n, v in (("Telefone", c["telefone"]), ("Email", c["email"])) if v) \
+        or "Contacto pelo perfil"
+    with st.container(border=True):
+        info, acoes = st.columns([2.7, 2.3], vertical_alignment="center")
+        info.markdown(
+            f'<div class="ln-topo"><span class="ln-nome">{html.escape(str(c["nome"]))}</span>'
+            f'<span class="ln-pont">{int(c["score"] or 0)}%</span></div>'
+            f'<div class="ln-sub">{html.escape(esp)} · {html.escape(local)} · {html.escape(contacto)}</div>'
+            + (f'<div class="ln-nota">{html.escape(nota)}</div>' if nota else ""),
+            unsafe_allow_html=True,
+        )
+        a, b = acoes.columns(2)
+        if a.button("Abrir", key=f"{prefixo}_{c['id']}", icon=":material/visibility:", type="primary",
+                    help="Abrir a ficha para contactar e registar", **LARGURA):
+            st.session_state["candidato_aberto"] = int(c["id"])
+            st.rerun()
+        url = url_segura(c["url_perfil"]) or url_segura(c["url_fonte"])
+        if url:
+            b.link_button("Perfil", url, icon=":material/open_in_new:", **LARGURA)
+
+
+def pagina_painel(df: pd.DataFrame) -> None:
+    """Painel de trabalho: o que precisa de ação hoje."""
+    cabecalho("Painel", "O que precisa da sua atenção hoje")
+    if _vista_detalhe():
+        return
     if df.empty:
         st.info("Ainda não existem candidatos. Use «Procurar profissionais», na barra lateral, "
                 "para encontrar os primeiros profissionais.")
         return
 
-    ativos = df[df["estado"] != "Arquivado"]
-    contactados = df["data_primeiro_contacto"].notna().sum()
-    m = st.columns(4)
-    m[0].metric("Candidatos encontrados", len(df))
-    m[1].metric("Aprovados pela IA", int(df["recomendacao"].isin(RECOMENDACOES[:2]).sum()),
-                help="Recomendação «Contactar» ou «Contactar imediatamente».")
-    m[2].metric("Score acima de 80%", int((df["score"] > 80).sum()))
-    m[3].metric("Disponíveis já", int(
-        ((df["disponibilidade_imediata"] == "Sim") | (df["disponibilidade_classificacao"] == "Confirmada")).sum()))
-    m = st.columns(4)
-    m[0].metric("Contactados", int(contactados))
-    m[1].metric("Entrevistas marcadas", int((df["estado"] == "Entrevista marcada").sum()))
-    m[2].metric("Contratados", int((df["estado"] == "Contratado").sum()))
-    m[3].metric("Score médio", f"{df['score'].mean():.0f}%")
-    st.write("")
+    # Funil do processo numa só linha.
+    passos = []
+    for nome, estados in ETAPAS_FUNIL:
+        total = int(df["estado"].isin(estados).sum())
+        passos.append(f'<div class="funil-passo"><b>{total}</b><span>{nome}</span></div>')
+    st.markdown('<div class="funil">' + '<div class="funil-seta">›</div>'.join(passos) + "</div>",
+                unsafe_allow_html=True)
 
+    ativos = df[~df["estado"].isin(["Arquivado", "Rejeitado", "Contratado"])]
+    hoje = date.today()
+    esquerda, direita = st.columns([1.75, 1], gap="large")
+
+    with esquerda:
+        # 1) Contactar primeiro: ainda não contactados, disponíveis e com melhor pontuação.
+        por_contactar = ativos[ativos["data_primeiro_contacto"].isna()]
+        peso = {"Confirmada": 0, "Provável": 1, "Desconhecida": 2, "Não disponível": 3}
+        por_contactar = por_contactar.assign(
+            _d=por_contactar["disponibilidade_classificacao"].map(peso).fillna(2),
+            _c=~(por_contactar["telefone"].astype(bool) | por_contactar["email"].astype(bool)),
+        ).sort_values(["_d", "_c", "score"], ascending=[True, True, False])
+        with st.container(border=True):
+            st.markdown(f"**Contactar primeiro ({len(por_contactar)})**")
+            st.caption("Ainda não contactados — primeiro os disponíveis, com contacto direto e melhor pontuação.")
+            if por_contactar.empty:
+                st.caption("Todos os candidatos ativos já foram contactados.")
+            for _, c in por_contactar.head(6).iterrows():
+                _linha_candidato(c, "contactar")
+            if len(por_contactar) > 6:
+                st.caption(f"Mais {len(por_contactar) - 6} na página «Candidatos» "
+                           "(filtro «Ainda não contactados»).")
+
+        # 2) Sem resposta: contactados há 3 dias ou mais, sem avanço.
+        limite = hoje - timedelta(days=3)
+        sem_resposta = ativos[ativos["estado"].isin(["Contactado", "Sem resposta"])
+                              & ativos["data_ultimo_contacto"].notna()]
+        sem_resposta = sem_resposta[sem_resposta["data_ultimo_contacto"] <= limite] \
+            .sort_values("data_ultimo_contacto")
+        with st.container(border=True):
+            st.markdown(f"**Voltar a contactar ({len(sem_resposta)})**")
+            st.caption("Contactados há 3 dias ou mais, ainda sem resposta.")
+            if sem_resposta.empty:
+                st.caption("Nenhum candidato à espera de novo contacto.")
+            for _, c in sem_resposta.head(6).iterrows():
+                dias = (hoje - c["data_ultimo_contacto"]).days
+                _linha_candidato(c, "recontactar", f"Último contacto há {dias} dias")
+
+    with direita:
+        # 3) Tarefas em atraso e de hoje.
+        try:
+            tarefas = [x for x in db.listar_tarefas(apenas_pendentes=True)
+                       if x["data_limite"] is None or x["data_limite"] <= hoje]
+        except ErroBaseDados as exc:
+            tarefas = []
+            st.error(str(exc))
+        with st.container(border=True):
+            st.markdown(f"**Tarefas para hoje ({len(tarefas)})**")
+            if tarefas:
+                listar_tarefas_interativas(tarefas[:10], "painel_t", mostrar_candidato=True)
+            else:
+                st.caption("Sem tarefas pendentes para hoje.")
+
+        # 4) Próximas entrevistas.
+        try:
+            entrevistas = [e for e in db.listar_entrevistas()
+                           if e["data"] and e["data"].date() >= hoje and e["resultado"] == "Por realizar"]
+        except ErroBaseDados as exc:
+            entrevistas = []
+            st.error(str(exc))
+        entrevistas.sort(key=lambda e: e["data"])
+        with st.container(border=True):
+            st.markdown(f"**Próximas entrevistas ({len(entrevistas)})**")
+            if not entrevistas:
+                st.caption("Sem entrevistas marcadas.")
+            for e in entrevistas[:6]:
+                st.markdown(f"{formatar_data(e['data'])} · **{html.escape(e['candidato'])}**  \n"
+                            f"<span class='ln-sub'>{html.escape(e['tipo'])} · {html.escape(e['entrevistador'])}</span>",
+                            unsafe_allow_html=True)
+
+        # 5) Pesquisas recentes.
+        try:
+            pesquisas = db.listar_pesquisas_df().head(4)
+        except ErroBaseDados:
+            pesquisas = pd.DataFrame()
+        with st.container(border=True):
+            st.markdown("**Pesquisas recentes**")
+            if pesquisas.empty:
+                st.caption("Ainda não foram feitas pesquisas.")
+            for _, p in pesquisas.iterrows():
+                params = p["parametros"] or {}
+                esp = lista_para_texto((params.get("especialidades") or [])[:2]) or "Técnicos de AVAC em geral"
+                st.markdown(f"{formatar_data(p['data'])} · {int(p['novos'] or 0)} novos  \n"
+                            f"<span class='ln-sub'>{html.escape(esp)}</span>", unsafe_allow_html=True)
+
+
+def _estatisticas(df: pd.DataFrame) -> None:
+    """Gráficos de acompanhamento (separador Estatísticas da Administração)."""
+    if df.empty:
+        st.info("Ainda não existem dados para mostrar.")
+        return
+    ativos = df[df["estado"] != "Arquivado"]
     c1, c2 = st.columns(2)
     with c1:
         esp = ativos["especialidades"].explode().dropna()
@@ -574,8 +733,8 @@ def pagina_dashboard(df: pd.DataFrame) -> None:
                         labels=["0–20%", "21–40%", "41–60%", "61–80%", "81–100%"])
         contagem = faixas.value_counts().reindex(["81–100%", "61–80%", "41–60%", "21–40%", "0–20%"][::-1])
         contagem = contagem.fillna(0).astype(int).reset_index()
-        contagem.columns = ["Score", "Candidatos"]
-        _barras(contagem, "Score", "Distribuição dos scores", CIANO)
+        contagem.columns = ["Pontuação", "Candidatos"]
+        _barras(contagem, "Pontuação", "Distribuição das pontuações", CIANO)
     with c2:
         contagem = df["estado"].value_counts().reindex(ESTADOS[::-1]).dropna().astype(int).reset_index()
         contagem.columns = ["Estado", "Candidatos"]
@@ -597,6 +756,8 @@ def pagina_dashboard(df: pd.DataFrame) -> None:
         fig.update_xaxes(title=None, tickformat="%d/%m", tickangle=0, dtick=86400000)
         fig.update_yaxes(title=None)
         _grafico(fig, legenda=True)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +790,7 @@ def mostrar_detalhe(candidato_id: int) -> None:
 
     esp = lista_para_texto(c["especialidades"]) or c["cargo"] or "Especialidade não identificada"
     local = c["localizacao"] or c["concelho"] or "Localização não identificada"
-    etiquetas = etiqueta(c["estado"], cor_estado(c["estado"])) + etiqueta(f"Score {c['score']}%", "escura")
+    etiquetas = etiqueta(c["estado"], cor_estado(c["estado"])) + etiqueta(f"Pontuação {c['score']}%", "escura")
     etiquetas += etiqueta(c["recomendacao"], "verde" if c["recomendacao"] in RECOMENDACOES[:2] else "cinza")
     etiquetas += etiqueta(f"Disponibilidade: {c['disponibilidade_classificacao']}",
                           "verde" if c["disponibilidade_classificacao"] in ("Confirmada", "Provável") else "cinza")
@@ -652,9 +813,9 @@ def mostrar_detalhe(candidato_id: int) -> None:
     with abas[0]:
         with st.expander("Resumo profissional", expanded=True):
             st.write(limpar_resumo(c["resumo"], 1200) or "Não informado")
-        with st.expander("Score e justificação", expanded=True):
+        with st.expander("Pontuação e justificação", expanded=True):
             a, b = st.columns(2)
-            a.progress(c["score"] / 100, text=f"Score de adequação: {c['score']}%")
+            a.progress(c["score"] / 100, text=f"Pontuação de adequação: {c['score']}%")
             b.progress(c["nivel_confianca"] / 100, text=f"Confiança na informação: {c['nivel_confianca']}%")
             st.write(c["justificacao_score"] or "Não informado")
         with st.expander("Experiência"):
@@ -1022,9 +1183,9 @@ def listar_tarefas_interativas(tarefas: list[dict], prefixo: str, mostrar_candid
 # Página: Candidatos
 # ---------------------------------------------------------------------------
 
-FILTROS_RAPIDOS = ["Com contacto direto", "Disponíveis", "Score 70% ou mais", "F-Gas",
+FILTROS_RAPIDOS = ["Com contacto direto", "Disponíveis", "Pontuação 70% ou mais", "F-Gas",
                    "Engenheiros", "Ainda não contactados"]
-ORDENACOES = ["Melhor score", "Mais recentes", "Disponibilidade", "Nome (A-Z)"]
+ORDENACOES = ["Melhor pontuação", "Mais recentes", "Disponibilidade", "Nome (A-Z)"]
 
 
 def _texto_pesquisavel(linha: pd.Series) -> str:
@@ -1054,7 +1215,7 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         f_local = b.multiselect("Localização", locais, placeholder="Todas")
         f_estado = c.multiselect("Estado do processo", [e for e in ESTADOS if e in set(df["estado"])],
                                  placeholder="Todos")
-        f_score = d.slider("Score mínimo", 0, 100, 0, step=5)
+        f_score = d.slider("Pontuação mínima", 0, 100, 0, step=5)
         a, b, c, d = st.columns(4)
         f_disp = a.multiselect("Disponibilidade", CLASSIF_DISPONIBILIDADE, placeholder="Qualquer")
         f_rec = b.multiselect("Recomendação", RECOMENDACOES, placeholder="Qualquer")
@@ -1078,7 +1239,7 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         filtrado = filtrado[filtrado["telefone"].astype(bool) | filtrado["email"].astype(bool)]
     if "Disponíveis" in rapidos:
         filtrado = filtrado[filtrado["disponibilidade_classificacao"].isin(["Confirmada", "Provável"])]
-    if "Score 70% ou mais" in rapidos:
+    if "Pontuação 70% ou mais" in rapidos:
         filtrado = filtrado[filtrado["score"] >= 70]
     if "F-Gas" in rapidos:
         filtrado = filtrado[(filtrado["certificacao_fgas"] == "Sim") | filtrado["certificacoes"].apply(
@@ -1153,7 +1314,7 @@ def _cartao_candidato(c: pd.Series, prefixo: str, motivo: str = "") -> None:
                 <div class="cc-nome">{html.escape(str(c["nome"]))}</div>
                 <div class="cc-cargo">{html.escape(esp)}{(" · " + html.escape(cargo)) if cargo else ""}</div>
               </div>
-              <div class="cc-score"><b>{score}%</b><small>score</small></div>
+              <div class="cc-score"><b>{score}%</b><small>pontuação</small></div>
             </div>
             <div class="cc-barra"><div style="width:{score}%"></div></div>
             <div class="cc-info">Zona: <b>{html.escape(local)}</b> · {html.escape(c["recomendacao"])}</div>
@@ -1205,7 +1366,7 @@ def _tabela_candidatos(df: pd.DataFrame, chave: str, colunas_extra: dict | None 
         "Especialidade": df.apply(
             lambda l: lista_para_texto((l["especialidades"] or [])[:2]) or l["cargo"], axis=1),
         "Localização": df["concelho"].where(df["concelho"].astype(bool), df["localizacao"]),
-        "Score": df["score"],
+        "Pontuação": df["score"],
         "Disponibilidade": df["disponibilidade_classificacao"],
         "Estado": df["estado"],
         "Contacto": df.apply(
@@ -1220,7 +1381,7 @@ def _tabela_candidatos(df: pd.DataFrame, chave: str, colunas_extra: dict | None 
         vista.reset_index(drop=True), hide_index=True, on_select="rerun", selection_mode="single-row",
         key=chave, **LARGURA,
         column_config={
-            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d%%"),
+            "Pontuação": st.column_config.ProgressColumn("Pontuação", min_value=0, max_value=100, format="%d%%"),
             "Data de recolha": st.column_config.DateColumn(format="DD/MM/YYYY"),
             "Perfil": st.column_config.LinkColumn("Perfil", display_text="Abrir"),
         },
@@ -1397,7 +1558,7 @@ def pagina_urgente(df: pd.DataFrame) -> None:
         return
 
     st.markdown(f"**{len(ordenado)} candidatos por ordem de prioridade** para {html.escape(pedido['local'])} "
-                "— disponibilidade imediata, score, proximidade, competências, contacto direto e experiência.")
+                "— disponibilidade imediata, pontuação, proximidade, competências, contacto direto e experiência.")
     _grelha_candidatos(ordenado, "urgente", motivos=ordenado["motivos"])
 
 
@@ -1409,12 +1570,10 @@ def pagina_tarefas() -> None:
     u = utilizador_atual()
     cabecalho("Tarefas", "Lembretes e ações de acompanhamento")
     with st.form("nova_tarefa", clear_on_submit=True):
-        a, b, c = st.columns([3, 1, 1])
+        a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
         titulo = a.text_input("Nova tarefa", placeholder="Ex.: Ligar aos candidatos de Sintra")
         data_limite = b.date_input("Data limite", value=date.today(), format="DD/MM/YYYY")
-        c.write("")
-        c.write("")
-        if c.form_submit_button("Criar tarefa", **LARGURA):
+        if c.form_submit_button("Criar tarefa", icon=":material/add:", type="primary", **LARGURA):
             try:
                 db.criar_tarefa(titulo, u["nome"], data_limite, u["nome"])
                 avisar("Tarefa criada.")
@@ -1431,12 +1590,12 @@ def pagina_tarefas() -> None:
         tarefas = [t for t in tarefas if t["responsavel"] == u["nome"]]
     pendentes = [t for t in tarefas if not t["concluida"]]
     concluidas = [t for t in tarefas if t["concluida"]]
-    a, b = st.columns(2)
-    with a:
-        st.subheader(f"Pendentes ({len(pendentes)})")
+    a, b = st.columns(2, gap="medium")
+    with a, st.container(border=True):
+        st.markdown(f"**Pendentes ({len(pendentes)})**")
         listar_tarefas_interativas(pendentes, "tp", mostrar_candidato=True)
-    with b:
-        st.subheader(f"Concluídas ({len(concluidas)})")
+    with b, st.container(border=True):
+        st.markdown(f"**Concluídas ({len(concluidas)})**")
         listar_tarefas_interativas(concluidas[:30], "tc", mostrar_candidato=True)
 
 
@@ -1518,7 +1677,8 @@ responsável pela proteção de dados da empresa.
 def pagina_administracao() -> None:
     u = utilizador_atual()
     cabecalho("Administração", "Utilizadores, pesquisas, auditoria e proteção de dados")
-    abas = st.tabs(["Utilizadores", "Pesquisas realizadas", "Fontes consultadas", "Histórico de alterações", "RGPD"])
+    abas = st.tabs(["Utilizadores", "Estatísticas", "Pesquisas realizadas", "Fontes consultadas",
+                    "Histórico de alterações", "RGPD"])
 
     with abas[0]:
         try:
@@ -1540,14 +1700,16 @@ def pagina_administracao() -> None:
                         st.rerun()
                     except ErroBaseDados as exc:
                         st.error(str(exc))
-        a, b = st.columns(2)
-        with a, st.form("novo_utilizador", clear_on_submit=True):
+        with st.form("novo_utilizador", clear_on_submit=True):
             st.markdown("**Novo utilizador**")
-            nome = st.text_input("Nome")
-            email = st.text_input("Email")
-            perfil = st.selectbox("Perfil", PERFIS_UTILIZADOR, index=1)
-            password = st.text_input("Palavra-passe inicial", type="password")
-            if st.form_submit_button("Criar utilizador", type="primary"):
+            a, b = st.columns(2)
+            nome = a.text_input("Nome")
+            email = b.text_input("Email")
+            a, b, c = st.columns([1, 1, 0.7], vertical_alignment="bottom")
+            perfil = a.selectbox("Perfil", PERFIS_UTILIZADOR, index=1)
+            password = b.text_input("Palavra-passe inicial", type="password",
+                                    help="Mínimo de 8 caracteres, com letras e números.")
+            if c.form_submit_button("Criar utilizador", icon=":material/person_add:", type="primary", **LARGURA):
                 erro = validar_password(password)
                 if erro:
                     st.error(erro)
@@ -1558,11 +1720,13 @@ def pagina_administracao() -> None:
                         st.rerun()
                     except ErroBaseDados as exc:
                         st.error(str(exc))
-        with b, st.form("alterar_password", clear_on_submit=True):
+        with st.form("alterar_password", clear_on_submit=True):
             st.markdown("**Alterar palavra-passe**")
-            alvo = st.selectbox("Utilizador", utilizadores, format_func=lambda x: f"{x['nome']} ({x['email']})")
-            nova = st.text_input("Nova palavra-passe", type="password")
-            if st.form_submit_button("Alterar palavra-passe"):
+            a, b, c = st.columns([1, 1, 0.7], vertical_alignment="bottom")
+            alvo = a.selectbox("Utilizador", utilizadores, format_func=lambda x: f"{x['nome']} ({x['email']})")
+            nova = b.text_input("Nova palavra-passe", type="password",
+                                help="Mínimo de 8 caracteres, com letras e números.")
+            if c.form_submit_button("Alterar palavra-passe", icon=":material/key:", **LARGURA):
                 erro = validar_password(nova)
                 if erro:
                     st.error(erro)
@@ -1575,6 +1739,9 @@ def pagina_administracao() -> None:
                         st.error(str(exc))
 
     with abas[1]:
+        _estatisticas(db.listar_candidatos_df())
+
+    with abas[2]:
         try:
             pesquisas = db.listar_pesquisas_df()
             if pesquisas.empty:
@@ -1591,7 +1758,7 @@ def pagina_administracao() -> None:
         except ErroBaseDados as exc:
             st.error(str(exc))
 
-    with abas[2]:
+    with abas[3]:
         try:
             fontes = db.listar_fontes_df()
             if fontes.empty:
@@ -1606,14 +1773,14 @@ def pagina_administracao() -> None:
         except ErroBaseDados as exc:
             st.error(str(exc))
 
-    with abas[3]:
+    with abas[4]:
         try:
             st.dataframe(_formatar_historico(db.listar_historico()), hide_index=True, **LARGURA,
                          column_config={"Data": st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm")})
         except ErroBaseDados as exc:
             st.error(str(exc))
 
-    with abas[4]:
+    with abas[5]:
         st.markdown(NOTA_RGPD)
         st.divider()
         st.markdown("**Conservação limitada — revisão de candidatos antigos**")
@@ -1671,8 +1838,8 @@ def main() -> None:
         st.stop()
 
     try:
-        if pagina == "Dashboard":
-            pagina_dashboard(df)
+        if pagina == "Painel":
+            pagina_painel(df)
         elif pagina == "Candidatos":
             pagina_candidatos(df)
         elif pagina == "Serviço imediato":
