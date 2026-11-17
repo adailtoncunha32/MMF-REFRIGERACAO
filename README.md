@@ -39,10 +39,15 @@ suporta as ligações WebSocket de que o Streamlit precisa, por isso a publicaç
    ANTHROPIC_API_KEY = "sk-ant-..."
    TAVILY_API_KEY = "tvly-..."
    DATABASE_URL = "postgresql://postgres.xxxx:PALAVRA-PASSE@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+   ADMIN_NOME = "Nome do responsável"
+   ADMIN_EMAIL = "responsavel@empresa.pt"
+   ADMIN_PASSWORD = "PalavraPasseForte2026"
    ```
 
-4. Clique em **Deploy**. Ao abrir o endereço pela primeira vez, crie a conta de administrador e
-   depois os restantes utilizadores em **Administração → Utilizadores**.
+4. Clique em **Deploy**. Não existe registo público: o primeiro administrador é criado
+   automaticamente com o `ADMIN_EMAIL` e a `ADMIN_PASSWORD` dos Secrets. Sem esses valores, a página
+   inicial apenas avisa que a aplicação não está configurada. Os restantes utilizadores são criados
+   por um administrador em **Administração → Utilizadores**.
 
 As chaves ficam guardadas apenas nos *Secrets* do alojamento: não estão no repositório nem são
 mostradas aos utilizadores. Cada nova versão enviada para o GitHub é publicada automaticamente.
@@ -142,8 +147,8 @@ Opcionalmente, defina `ANTHROPIC_MODEL` para usar outro modelo (por omissão, `c
 streamlit run app.py
 ```
 
-A aplicação abre em <http://localhost:8501>. No **primeiro acesso** é pedido que crie a conta de
-administrador. Os restantes utilizadores são criados em **Administração → Utilizadores**.
+A aplicação abre em <http://localhost:8501>. O primeiro administrador é criado a partir de
+`ADMIN_EMAIL` e `ADMIN_PASSWORD` no `.env`. Os restantes utilizadores são criados em **Administração → Utilizadores**.
 
 ## Como utilizar o dashboard
 

@@ -20,7 +20,8 @@ load_dotenv()  # carrega as chaves do ficheiro .env antes de importar os módulo
 
 # Em alojamento na nuvem (Streamlit Community Cloud) as chaves vêm dos "Secrets".
 try:
-    for _nome in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY", "DATABASE_URL", "ANTHROPIC_MODEL"):
+    for _nome in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY", "DATABASE_URL", "ANTHROPIC_MODEL",
+                  "ADMIN_NOME", "ADMIN_EMAIL", "ADMIN_PASSWORD"):
         if _nome in st.secrets and not os.getenv(_nome):
             os.environ[_nome] = str(st.secrets[_nome])
 except Exception:  # sem ficheiro de segredos (execução local): usa-se apenas o .env
@@ -213,28 +214,29 @@ def ecra_autenticacao() -> None:
             st.error(str(exc))
             st.stop()
 
+        # Não existe registo público: o primeiro administrador é criado a partir dos Secrets
+        # do alojamento (ADMIN_EMAIL / ADMIN_PASSWORD), que só o dono da aplicação controla.
         if primeiro_acesso:
-            st.info("Primeiro acesso: crie a conta de administrador da aplicação.")
-            with st.form("criar_admin"):
-                nome = st.text_input("Nome")
-                email = st.text_input("Email")
-                password = st.text_input("Palavra-passe", type="password",
-                                         help="Mínimo de 8 caracteres, com letras e números.")
-                confirmar = st.text_input("Confirmar palavra-passe", type="password")
-                if st.form_submit_button("Criar conta de administrador", type="primary", **LARGURA):
-                    erro = validar_password(password)
-                    if password != confirmar:
-                        st.error("As palavras-passe não coincidem.")
-                    elif erro:
-                        st.error(erro)
-                    else:
-                        try:
-                            st.session_state["utilizador"] = db.criar_utilizador(
-                                nome, email, password, "Administrador")
-                            st.rerun()
-                        except ErroBaseDados as exc:
-                            st.error(str(exc))
-        else:
+            email_admin = obter_variavel("ADMIN_EMAIL")
+            password_admin = obter_variavel("ADMIN_PASSWORD")
+            erro = validar_password(password_admin) if password_admin else "falta ADMIN_PASSWORD"
+            if email_admin and not erro:
+                try:
+                    db.criar_utilizador(obter_variavel("ADMIN_NOME") or "Administrador",
+                                        email_admin, password_admin, "Administrador")
+                    primeiro_acesso = False
+                except ErroBaseDados as exc:
+                    # Pode ter sido criado ao mesmo tempo noutra sessão: confirma de novo.
+                    primeiro_acesso = db.contar_utilizadores() == 0
+                    if primeiro_acesso:
+                        st.error(str(exc))
+            if primeiro_acesso:
+                st.warning("A aplicação ainda não está configurada. O responsável técnico deve definir "
+                           "ADMIN_EMAIL e ADMIN_PASSWORD (mínimo de 8 caracteres, com letras e "
+                           "números) nos Secrets do alojamento.")
+                st.stop()
+
+        if not primeiro_acesso:
             with st.form("iniciar_sessao"):
                 st.subheader("Iniciar sessão")
                 email = st.text_input("Email")
