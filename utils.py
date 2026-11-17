@@ -43,6 +43,22 @@ def limpar_texto(valor, limite: int = 0) -> str:
     return texto
 
 
+_RE_MARCACAO = re.compile(r"[#*_>`|\[\]~]+")
+_RE_EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿️‍]")
+_RE_ROTULOS = re.compile(r"\b(Headline|Recent Activity|Reposted|Activity|About|Sobre|Atividade)\s*:?", re.I)
+
+
+def limpar_resumo(valor, limite: int = 260) -> str:
+    """Resumo legível: sem marcação Markdown, emojis nem rótulos copiados das páginas."""
+    texto = limpar_texto(valor)
+    texto = _RE_EMOJI.sub(" ", _RE_MARCACAO.sub(" ", texto))
+    texto = _RE_ROTULOS.sub(" ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip(" -–·,.;:")
+    if len(texto) > limite:
+        texto = texto[:limite].rsplit(" ", 1)[0] + "…"
+    return texto
+
+
 def normalizar_texto(valor) -> str:
     """Minúsculas, sem acentos e sem pontuação — usado em comparações."""
     if not valor:

@@ -30,7 +30,7 @@ DOMINIOS_EXCLUIDOS = [
     "pt.jooble.org", "jooble.org", "glassdoor.com", "glassdoor.pt", "careerjet.pt",
     "itjobs.pt", "expressoemprego.pt", "pt.talent.com", "talent.com", "linkedin.com/jobs",
     "emprego.com", "jobleads.com", "gigroup.com", "pt.gigroup.com", "evolverh.pt", "egor.pt",
-    "bracos.app", "pt.trabajo.org", "trabajo.org", "trabalhar.pt", "empregosonline.pt", "workana.com", "jobatus.pt", "kitempleo.pt",
+    "bracos.app", "emprego.clan.pt", "sercanto.pt", "pt.trabajo.org", "trabajo.org", "trabalhar.pt", "empregosonline.pt", "workana.com", "jobatus.pt", "kitempleo.pt",
 ]
 
 # Sinais de que um resultado é uma OFERTA de emprego (não um profissional). Os perfis
@@ -108,6 +108,9 @@ def gerar_consultas(parametros: dict, limite: int = 8) -> list[str]:
         'site:linkedin.com/in "{esp}" {loc} "open to work" OR "à procura de emprego" OR "disponível"',
         '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de novas oportunidades"',
         'site:linkedin.com/in "{esp}" {loc}',
+        # Fontes onde o próprio profissional costuma deixar telefone ou email.
+        '"{esp}" {loc} currículo OR CV "telemóvel" OR "contacto" OR "email" disponível',
+        'site:facebook.com "{esp}" {loc} disponível OR "procuro trabalho" contacto',
         '"{esp}" {loc} currículo OR "curriculum vitae" OR CV experiência',
         '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" contacto',
     ]

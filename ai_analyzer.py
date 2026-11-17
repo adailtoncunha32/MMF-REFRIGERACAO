@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from models import (
     AREAS_EXPERIENCIA,
+    COORDENADAS,
     CLASSIF_DISPONIBILIDADE,
     NAO_IDENTIFICADO,
     RECOMENDACOES,
@@ -30,7 +31,7 @@ from models import (
     CandidatoIA,
     RespostaIA,
 )
-from utils import normalizar_email, normalizar_telefone, url_segura
+from utils import distancia_entre_locais, limpar_resumo, normalizar_email, normalizar_telefone, normalizar_texto, url_segura
 
 MODELO_OMISSAO = "claude-opus-5-5"
 TAMANHO_LOTE = 6          # resultados de pesquisa por pedido à IA
@@ -378,3 +379,134 @@ def analisar_resultados(
 
     candidatos.sort(key=lambda c: (c.score_adequacao, c.nivel_confianca), reverse=True)
     return candidatos, descartados, avisos
+
+
+# ---------------------------------------------------------------------------
+# Modo sem IA — extração por regras (usado quando não há chave da Anthropic ou a IA falha)
+# ---------------------------------------------------------------------------
+
+_RE_TELEFONE = re.compile(r"(?<!\d)(?:\+351[\s.-]?|00351[\s.-]?)?((?:9[1236]|2\d)\d[\s.-]?\d{3}[\s.-]?\d{3})(?!\d)")
+_RE_EMAIL_TEXTO = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_SEPARADORES_TITULO = re.compile(r"\s+[-–—|·]\s+")
+
+# Palavra-chave (normalizada) -> especialidade do catálogo.
+_PALAVRAS_ESPECIALIDADE = [
+    ("vrv", "Técnico de sistemas VRV"), ("vrf", "Técnico de sistemas VRF"),
+    ("chiller", "Técnico de chillers"), ("camara frigorifica", "Técnico de câmaras frigoríficas"),
+    ("camaras frigorificas", "Técnico de câmaras frigoríficas"),
+    ("bomba de calor", "Técnico de manutenção de bombas de calor"),
+    ("bombas de calor", "Técnico de manutenção de bombas de calor"),
+    ("caldeira", "Técnico de manutenção de caldeiras"), ("termossif", "Técnico de termossifões"),
+    ("solar termic", "Técnico de instalação de painéis solares térmicos"),
+    ("paineis solares", "Técnico de instalação de painéis solares térmicos"),
+    ("gases fluorados", "Técnico certificado em gases fluorados"), ("f gas", "Técnico com certificação F-Gas"),
+    ("fgas", "Técnico com certificação F-Gas"),
+    ("refrigeracao industrial", "Técnico de refrigeração industrial"),
+    ("refrigeracao", "Técnico de refrigeração comercial"), ("frio", "Técnico de equipamentos de frio comercial"),
+    ("ar condicionado", "Técnico de ar condicionado"), ("climatizacao", "Técnico de climatização"),
+    ("avac", "Técnico de AVAC"), ("hvac", "Técnico de AVAC"),
+]
+_PALAVRAS_RELEVANTES = ("avac", "hvac", "refrigera", "climatiza", "ar condicionado", "frio", "chiller",
+                        "vrv", "vrf", "bomba de calor", "caldeira", "solar", "termossif", "aquecimento",
+                        "gases fluorados", "f gas", "fgas", "frigorif", "rooftop")
+_SINAIS_DISPONIVEL = ("open to work", "procuro emprego", "procuro trabalho", "a procura de",
+                      "disponivel", "disponibilidade imediata", "novas oportunidades", "freelancer",
+                      "trabalhador independente", "por conta propria")
+
+
+def _parece_perfil_pessoal(r: dict) -> bool:
+    url = r["url"].lower()
+    if "linkedin.com/in/" in url:
+        return True
+    texto = normalizar_texto(f"{r['titulo']} {r['resumo']} {r['conteudo'][:1500]}")
+    tem_contacto = bool(_RE_TELEFONE.search(r["conteudo"]) or _RE_EMAIL_TEXTO.search(r["conteudo"]))
+    sinais = any(s in texto for s in ("curriculo", "curriculum", " cv ", "procuro", "freelancer",
+                                      "trabalhador independente", "disponivel"))
+    return tem_contacto and sinais
+
+
+def _extrair_sem_ia(indice: int, r: dict, criterios: dict) -> Optional[CandidatoIA]:
+    texto_original = f"{r['titulo']} {r['resumo']} {r['conteudo']}"
+    texto = normalizar_texto(texto_original)
+    if not any(p in texto for p in _PALAVRAS_RELEVANTES) or not _parece_perfil_pessoal(r):
+        return None
+
+    partes = [p.strip() for p in _SEPARADORES_TITULO.split(r["titulo"]) if p.strip()]
+    partes = [p for p in partes if normalizar_texto(p) != "linkedin"]
+    nome = partes[0] if partes and len(partes[0].split()) <= 5 and not any(
+        c.isdigit() for c in partes[0]) else NAO_IDENTIFICADO
+    cargo = partes[1] if len(partes) > 1 else ""
+
+    especialidades = []
+    for chave, esp in _PALAVRAS_ESPECIALIDADE:
+        if chave in texto and esp not in especialidades:
+            especialidades.append(esp)
+    if "engenheir" in texto and any(p in texto for p in ("avac", "hvac", "mecanic", "climatiza")):
+        especialidades.insert(0, "Engenheiro de AVAC")
+    especialidades = especialidades[:4]
+
+    localizacao = ""
+    for nome_local in sorted(COORDENADAS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(normalizar_texto(nome_local))}\b", texto):
+            localizacao = nome_local
+            break
+
+    telefone = _RE_TELEFONE.search(r["conteudo"])
+    email = _RE_EMAIL_TEXTO.search(r["conteudo"])
+    disponivel = any(s in texto for s in _SINAIS_DISPONIVEL)
+
+    # Score simples: especialidade, localização, disponibilidade e contacto.
+    score = 35
+    pedidas = [normalizar_texto(e) for e in criterios.get("especialidades") or []]
+    if not pedidas or any(any(p in normalizar_texto(e) or normalizar_texto(e) in p for e in especialidades)
+                          for p in pedidas):
+        score += 25
+    locais_pedidos = [l for l in (criterios.get("localizacoes") or []) if l != "Outra localização"]
+    if criterios.get("outra_localizacao"):
+        locais_pedidos.append(criterios["outra_localizacao"])
+    raio = float(criterios.get("raio_km") or 40)
+    distancias = [d for d in (distancia_entre_locais(localizacao, l) for l in locais_pedidos or ["Lisboa"])
+                  if d is not None]
+    if localizacao and distancias and min(distancias) <= raio:
+        score += 15
+    if disponivel:
+        score += 15
+    if telefone or email:
+        score += 10
+    score = min(score, 95)
+
+    return CandidatoIA(
+        indice_resultado=indice,
+        tipo_resultado="perfil_profissional",
+        nome=nome,
+        cargo=cargo[:200],
+        especialidades=especialidades,
+        localizacao=localizacao,
+        concelho=localizacao,
+        certificacoes=["F-Gas (mencionado no perfil)"] if ("gases fluorados" in texto or "f gas" in texto) else [],
+        disponibilidade="Sinais de procura de trabalho no perfil" if disponivel else "",
+        disponibilidade_classificacao="Provável" if disponivel else "Desconhecida",
+        contacto_telefone=telefone.group(0) if telefone else "",
+        contacto_email=email.group(0) if email else "",
+        url_perfil=r["url"],
+        score_adequacao=score,
+        nivel_confianca=40,
+        justificacao_score="Classificação automática por palavras-chave (sem IA). Confirme o perfil.",
+        resumo=limpar_resumo(r["resumo"], 300),
+        recomendacao=("Contactar imediatamente" if score >= 80 else "Contactar" if score >= 60
+                      else "Guardar para mais tarde"),
+    )
+
+
+def analisar_sem_ia(resultados: list[dict], criterios: dict) -> tuple[list[CandidatoIA], list[dict]]:
+    """Extrai candidatos por regras simples. Devolve (candidatos, descartados)."""
+    candidatos, descartados = [], []
+    for indice, r in enumerate(resultados):
+        candidato = _extrair_sem_ia(indice, r, criterios)
+        verificado = _verificar_candidato(candidato, resultados) if candidato else None
+        if verificado:
+            candidatos.append(verificado)
+        else:
+            descartados.append({**r, "tipo_resultado": "irrelevante", "motivo": "Não é um perfil pessoal"})
+    candidatos.sort(key=lambda c: c.score_adequacao, reverse=True)
+    return candidatos, descartados

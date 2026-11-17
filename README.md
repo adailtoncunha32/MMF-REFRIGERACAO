@@ -156,7 +156,7 @@ A aplicação abre em <http://localhost:8501>. O primeiro administrador é criad
   imediatamente, contactados, entrevistas, contratados, score médio) e gráficos interativos por
   especialidade, localização, score, estado e evolução das pesquisas.
 - **👷 Candidatos** — tabela com filtros; clique numa linha para abrir os detalhes.
-- **🚨 Pesquisa urgente** — ordena os candidatos para uma necessidade imediata.
+- **🚨 Serviço imediato** — ordena os candidatos para uma necessidade imediata.
 - **✅ Tarefas** — lembretes e ações de acompanhamento.
 - **🤝 Contratações** — candidatos em decisão, entrevistas e contratações (gestor e administrador).
 - **⚙️ Administração** — utilizadores, pesquisas, fontes, histórico de alterações e RGPD.
@@ -170,7 +170,9 @@ A aplicação abre em <http://localhost:8501>. O primeiro administrador é criad
    duplicados e quantos resultados foram descartados (empresas, anúncios, diretórios…).
 4. Em **Candidatos**, assinale «Apenas a última pesquisa» para ver só os resultados novos.
 
-Para necessidades imediatas, use **Pesquisa urgente**: «Procurar na base de candidatos» responde de
+**Sem chave da Anthropic (ou se a IA falhar)**, a pesquisa continua a funcionar em *modo sem IA*: os perfis são identificados por palavras-chave (nome, função, zona, contactos e sinais de procura de trabalho) e recebem um score simples. Com a chave configurada, a IA faz uma análise mais rica.
+
+Para necessidades imediatas, use **Serviço imediato**: «Procurar na base de candidatos» responde de
 imediato com os candidatos já guardados, por ordem de prioridade (disponibilidade imediata, score,
 proximidade, competências, contacto direto e experiência); «Procurar novos candidatos com IA» lança
 uma prospeção com esses critérios.
