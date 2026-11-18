@@ -76,7 +76,7 @@ Inteligência Artificial, contactá-los e acompanhar o processo até à contrata
 
 | Ficheiro | Responsabilidade |
 |---|---|
-| `app.py` | Interface Streamlit: autenticação, barra lateral, dashboard, candidatos, pesquisa urgente, tarefas, contratações e administração. |
+| `app.py` | Interface Streamlit: autenticação, página Procurar, painel, candidatos, pesquisa urgente, tarefas, contratações e administração. |
 | `search_engine.py` | Gera as consultas e pesquisa na Tavily; remove duplicados e resultados sem origem. |
 | `ai_analyzer.py` | Envia os resultados à Anthropic, exige JSON estruturado, valida e verifica os dados. |
 | `models.py` | Listas de domínio (especialidades, zonas, estados), esquemas Pydantic e tabelas SQLAlchemy. |
@@ -84,8 +84,10 @@ Inteligência Artificial, contactá-los e acompanhar o processo até à contrata
 | `utils.py` | Normalização, hash de palavras-passe, deteção de duplicados, distâncias e ordenação urgente. |
 | `export_utils.py` | Exportação para CSV, XLSX e PDF. |
 
-**Fluxo:** critérios na barra lateral → consultas geradas automaticamente → pesquisa na Tavily →
-análise em lotes pela IA → validação (Pydantic + verificação dos contactos contra o texto da fonte) →
+**Fluxo:** critérios na página **Procurar** → leitura dos grupos públicos de AVAC no Facebook e
+pesquisa de publicações «procuro trabalho» na Tavily → filtro que só deixa passar pessoas a pedir
+trabalho (ofertas de emprego, empresas e venda de serviços são ignoradas; publicações com mais de
+90 dias também) → análise em lotes pela IA → validação (Pydantic + verificação dos contactos contra o texto da fonte) →
 gravação sem duplicados → acompanhamento do candidato até à contratação.
 
 Foram acrescentados à estrutura pedida dois ficheiros: `.streamlit/config.toml` (tema de cores) e
@@ -136,8 +138,6 @@ pip install -r requirements.txt
 1. Copie `.env.example` para `.env`.
 2. Preencha `ANTHROPIC_API_KEY` e `TAVILY_API_KEY`.
 
-Em alternativa, cole as chaves em **🔑 Chaves API**, na barra lateral. Nesse caso ficam apenas na
-memória da sessão: não são mostradas no ecrã nem guardadas na base de dados.
 
 Opcionalmente, defina `ANTHROPIC_MODEL` para usar outro modelo (por omissão, `claude-opus-5-5`).
 
@@ -163,12 +163,15 @@ A aplicação abre em <http://localhost:8501>. O primeiro administrador é criad
 
 ## Como fazer pesquisas
 
-1. Na barra lateral, escolha especialidades, localização, raio, disponibilidade, tipo de contratação,
-   urgência e número máximo de resultados.
-2. Clique em **Procurar profissionais**.
-3. Acompanhe o progresso. No fim, a aplicação indica quantos candidatos são novos, quantos eram
-   duplicados e quantos resultados foram descartados (empresas, anúncios, diretórios…).
-4. Em **Candidatos**, assinale «Apenas a última pesquisa» para ver só os resultados novos.
+1. Na página **Procurar**, escolha as especialidades e a zona (os outros critérios são opcionais).
+2. Clique em **Procurar profissionais**. A pesquisa demora cerca de 20 segundos.
+3. No fim, a aplicação indica quantas publicações leu e quantas ignorou (ofertas de emprego,
+   venda de serviços, sem pedido de trabalho). Os profissionais encontrados aparecem logo por baixo.
+4. O seletor **Pesquisa** (em Procurar e em Candidatos) mostra os candidatos de cada pesquisa.
+   **Não interessa** retira um candidato da lista.
+
+Cada grupo de AVAC novo encontrado fica guardado e é lido em todas as pesquisas seguintes, por isso
+os resultados aumentam com o uso. Pesquise todos os dias: aparecem publicações novas.
 
 **Sem chave da Anthropic (ou se a IA falhar)**, a pesquisa continua a funcionar em *modo sem IA*: os perfis são identificados por palavras-chave (nome, função, zona, contactos e sinais de procura de trabalho) e recebem um score simples. Com a chave configurada, a IA faz uma análise mais rica.
 

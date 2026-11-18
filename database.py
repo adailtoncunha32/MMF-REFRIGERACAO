@@ -34,6 +34,7 @@ from models import (
     Entrevista,
     Especialidade,
     Fonte,
+    GrupoFacebook,
     Historico,
     Nota,
     Pesquisa,
@@ -633,16 +634,18 @@ def registar_pesquisa(utilizador: str, parametros: dict, consultas: list[str], u
 @_protegido
 def concluir_pesquisa(pesquisa_id: int, total_resultados: int, total_candidatos: int,
                       novos: int, duplicados: int, fontes: list[dict],
-                      candidato_ids: Optional[list[int]] = None) -> None:
+                      candidato_ids: Optional[list[int]] = None, parametros_extra: Optional[dict] = None) -> None:
     with sessao() as s:
         p = s.get(Pesquisa, pesquisa_id)
         if not p:
             return
         p.total_resultados, p.total_candidatos = total_resultados, total_candidatos
         p.novos, p.duplicados = novos, duplicados
+        novos_parametros = {**(p.parametros or {}), **(parametros_extra or {})}
         if candidato_ids is not None:
             # Todos os candidatos encontrados nesta pesquisa (novos e já existentes).
-            p.parametros = {**(p.parametros or {}), "candidatos_ids": list(dict.fromkeys(candidato_ids))}
+            novos_parametros["candidatos_ids"] = list(dict.fromkeys(candidato_ids))
+        p.parametros = novos_parametros
         for f in fontes:
             s.add(Fonte(pesquisa_id=pesquisa_id, url=(f.get("url") or "")[:600],
                         titulo=limpar_texto(f.get("titulo"), 400),
@@ -661,6 +664,32 @@ def listar_pesquisas_df() -> pd.DataFrame:
 
 
 @_protegido
+def listar_grupos_facebook() -> list[str]:
+    """URLs dos grupos de Facebook descobertos (ativos), os mais úteis primeiro."""
+    with sessao() as s:
+        return list(s.scalars(select(GrupoFacebook.url).where(GrupoFacebook.ativo)
+                              .order_by(GrupoFacebook.pessoas_encontradas.desc(), GrupoFacebook.id)))
+
+
+@_protegido
+def registar_grupos_facebook(urls: list[str], pessoas_por_grupo: Optional[dict[str, int]] = None) -> None:
+    """Guarda grupos novos e soma as pessoas encontradas em cada um."""
+    pessoas_por_grupo = pessoas_por_grupo or {}
+    with sessao() as s:
+        existentes = {g.url: g for g in s.scalars(select(GrupoFacebook))}
+        for url in dict.fromkeys(list(urls) + list(pessoas_por_grupo)):
+            url = (url or "")[:300]
+            if not url:
+                continue
+            grupo = existentes.get(url)
+            if grupo is None:
+                grupo = GrupoFacebook(url=url, pessoas_encontradas=0)
+                s.add(grupo)
+                existentes[url] = grupo
+            grupo.pessoas_encontradas = (grupo.pessoas_encontradas or 0) + pessoas_por_grupo.get(url, 0)
+
+
+@_protegido
 def candidatos_por_pesquisa() -> dict[int, list[int]]:
     """{id da pesquisa: ids dos candidatos encontrados nela}, incluindo os que já existiam."""
     with sessao() as s:
@@ -668,13 +697,18 @@ def candidatos_por_pesquisa() -> dict[int, list[int]]:
         candidatos = list(s.execute(select(Candidato.id, Candidato.pesquisa_id, Candidato.url_fonte,
                                            Candidato.url_perfil)))
         resultado: dict[int, list[int]] = {}
+        antigas = [p.id for p in pesquisas if (p.parametros or {}).get("candidatos_ids") is None]
+        urls_por_pesquisa: dict[int, set[str]] = {}
+        if antigas:  # uma só consulta para todas as pesquisas antigas
+            for pid, url in s.execute(select(Fonte.pesquisa_id, Fonte.url).where(Fonte.pesquisa_id.in_(antigas))):
+                urls_por_pesquisa.setdefault(pid, set()).add(url)
         for p in pesquisas:
             guardados = (p.parametros or {}).get("candidatos_ids")
             if guardados is not None:
                 resultado[p.id] = [int(i) for i in guardados]
                 continue
             # Pesquisas antigas: os candidatos criados nela e os que vieram das mesmas páginas.
-            urls = set(s.scalars(select(Fonte.url).where(Fonte.pesquisa_id == p.id)))
+            urls = urls_por_pesquisa.get(p.id, set())
             resultado[p.id] = [c.id for c in candidatos
                                if c.pesquisa_id == p.id or c.url_fonte in urls or c.url_perfil in urls]
     return resultado

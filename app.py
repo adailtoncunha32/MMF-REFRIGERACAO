@@ -28,6 +28,46 @@ except Exception:  # sem ficheiro de segredos (execução local): usa-se apenas 
     pass
 
 import database as db  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Cache das leituras da base de dados (rapidez)
+# Cada leitura remota demora 0,3–0,8 s; sem cache, cada clique repetia 4 a 6 leituras.
+# As leituras ficam em memória 2 minutos e QUALQUER escrita limpa a cache, por isso o que
+# se vê está sempre atualizado.
+# ---------------------------------------------------------------------------
+_LEITURAS_BD = (
+    "listar_candidatos_df", "listar_pesquisas_df", "candidatos_por_pesquisa", "listar_entrevistas",
+    "listar_tarefas", "listar_fontes_df", "listar_historico", "listar_contratacoes_df",
+    "listar_utilizadores", "obter_candidato", "listar_contactos", "listar_notas",
+    "candidatos_para_revisao", "listar_grupos_facebook", "contar_utilizadores",
+)
+_ESCRITAS_BD = (
+    "criar_utilizador", "autenticar", "atualizar_utilizador", "alterar_password", "guardar_candidato",
+    "atualizar_candidato", "eliminar_candidato", "anonimizar_candidato", "registar_contacto",
+    "adicionar_nota", "criar_tarefa", "marcar_tarefa", "criar_entrevista", "atualizar_entrevista",
+    "registar_pesquisa", "concluir_pesquisa", "registar_contratacao", "registar_grupos_facebook",
+)
+
+
+def _limpar_cache_apos(funcao):
+    def envolvida(*args, **kwargs):
+        try:
+            return funcao(*args, **kwargs)
+        finally:
+            st.cache_data.clear()
+    envolvida.__name__ = funcao.__name__
+    return envolvida
+
+
+if not getattr(db, "_cache_ativa", False):
+    for _f in _LEITURAS_BD:
+        if hasattr(db, _f):
+            setattr(db, _f, st.cache_data(ttl=120, show_spinner=False)(getattr(db, _f)))
+    for _f in _ESCRITAS_BD:
+        if hasattr(db, _f):
+            setattr(db, _f, _limpar_cache_apos(getattr(db, _f)))
+    db._cache_ativa = True
+
 import ai_analyzer  # noqa: E402
 from ai_analyzer import ErroIA, analisar_resultados, analisar_sem_ia  # noqa: E402
 
@@ -53,7 +93,7 @@ from models import (  # noqa: E402
     TRI_ESTADO,
     CandidatoIA,
 )
-from search_engine import ErroPesquisa, executar_pesquisa, gerar_consultas  # noqa: E402
+from search_engine import DIAS_MAX_PUBLICACAO, ErroPesquisa, executar_pesquisa, gerar_consultas  # noqa: E402
 from utils import (  # noqa: E402
     formatar_data,
     link_mailto,
@@ -79,11 +119,13 @@ AZUL_ESCURO, CIANO, VERDE, VERMELHO, CINZA = "#0B2545", "#13A8C9", "#1E9E6A", "#
 PALETA = [CIANO, AZUL_ESCURO, VERDE, "#5B7DB1", "#8ED1E0", "#F2A541", "#7A8CA3", VERMELHO]
 
 PAGINAS_POR_PERFIL = {
-    "Administrador": ["Painel", "Candidatos", "Serviço imediato", "Tarefas", "Contratações", "Administração"],
-    "Recrutador": ["Painel", "Candidatos", "Serviço imediato", "Tarefas"],
+    "Administrador": ["Procurar", "Candidatos", "Painel", "Serviço imediato", "Tarefas", "Contratações",
+                      "Administração"],
+    "Recrutador": ["Procurar", "Candidatos", "Painel", "Serviço imediato", "Tarefas"],
     "Gestor": ["Painel", "Candidatos", "Contratações", "Tarefas"],
 }
 ICONES_PAGINA = {
+    "Procurar": "person_search",
     "Painel": "dashboard", "Candidatos": "engineering", "Serviço imediato": "bolt",
     "Tarefas": "task_alt", "Contratações": "handshake", "Administração": "settings",
 }
@@ -285,11 +327,16 @@ def _criar_admin_inicial() -> bool:
 GUIA_UTILIZACAO = """
 **1. Entrar** — use o email e a palavra-passe que o administrador lhe deu.
 
-**2. Procurar profissionais** — na barra lateral escolha as especialidades, a zona e o raio, e clique
-em **Procurar profissionais**. A pesquisa demora um a dois minutos e guarda os candidatos encontrados.
+**2. Procurar profissionais** — na página **Procurar** escolha as especialidades e a zona e clique
+em **Procurar profissionais**. A app lê os grupos públicos de AVAC no Facebook e pesquisa publicações
+no LinkedIn e na web, e fica **só com pessoas que escreveram que procuram trabalho** nos últimos 90 dias
+(ofertas de emprego, empresas e anúncios de venda de serviços são ignorados). Os resultados aparecem
+logo por baixo, na mesma página. Poucos resultados é normal: são pessoas reais à procura de trabalho.
+Pesquise todos os dias — aparecem publicações novas.
 
-**3. Ver os candidatos** — na página **Candidatos** cada profissional aparece num cartão com o score,
-a zona, a disponibilidade e o tipo de contacto. Use a pesquisa e os filtros rápidos para encontrar
+**3. Ver os candidatos** — na página **Candidatos** (ou nos resultados da página Procurar) cada
+profissional aparece num cartão com a pontuação, a zona, a disponibilidade e o tipo de contacto.
+O seletor **Pesquisa** mostra os candidatos de cada pesquisa. Use a pesquisa e os filtros rápidos para encontrar
 quem precisa (por exemplo, «Com contacto direto» ou «Disponíveis»).
 
 **4. Contactar** — clique em **Detalhes** e abra o separador **Contacto**:
@@ -376,6 +423,11 @@ def _nova_pesquisa() -> None:
         st.session_state[chave] = valor
 
 
+def _ir_para_procurar() -> None:
+    st.session_state["pagina"] = "Procurar"
+    st.session_state.pop("candidato_aberto", None)
+
+
 def barra_lateral() -> str:
     u = utilizador_atual()
     pode_pesquisar = u["perfil"] in ("Administrador", "Recrutador")
@@ -396,38 +448,9 @@ def barra_lateral() -> str:
             on_change=lambda: st.session_state.pop("candidato_aberto", None),
         )
         st.divider()
-
-        if pode_pesquisar:
-            st.subheader("Procurar profissionais")
-            st.button("Limpar critérios", icon=":material/restart_alt:", on_click=_nova_pesquisa, **LARGURA,
-                      help="Limpa os critérios para começar uma pesquisa nova.")
-            st.multiselect("Especialidades", TODAS_ESPECIALIDADES, key="f_especialidades",
-                           placeholder="Escolha uma ou mais",
-                           help="Sem seleção, são procurados técnicos de AVAC e refrigeração em geral.")
-            st.multiselect("Localização", LOCALIZACOES, key="f_localizacoes", placeholder="Escolha as zonas")
-            if "Outra localização" in st.session_state["f_localizacoes"]:
-                st.text_input("Outra localização", key="f_outra", placeholder="Ex.: Torres Vedras")
-            st.slider("Raio de pesquisa (km)", 5, 150, key="f_raio", step=5)
-            st.multiselect("Disponibilidade", DISPONIBILIDADES, key="f_disponibilidade",
-                           placeholder="Qualquer")
-            st.selectbox("Tipo de contratação", TIPOS_CONTRATACAO, key="f_tipo")
-            st.checkbox("Exigir certificação F-Gas", key="f_fgas")
-            st.slider("Número máximo de resultados", 5, 50, key="f_max", step=5,
-                      help="Resultados de pesquisa analisados pela IA. Mais resultados = mais tempo e custo.")
-
-            if st.button("Procurar profissionais", icon=":material/search:", type="primary", **LARGURA):
-                st.session_state["pedido_pesquisa"] = {
-                    "especialidades": st.session_state["f_especialidades"],
-                    "localizacoes": st.session_state["f_localizacoes"],
-                    "outra_localizacao": st.session_state.get("f_outra", ""),
-                    "raio_km": st.session_state["f_raio"],
-                    "disponibilidade": st.session_state["f_disponibilidade"],
-                    "tipo_contratacao": st.session_state["f_tipo"],
-                    "exige_fgas": st.session_state["f_fgas"],
-                    "max_resultados": st.session_state["f_max"],
-                    "urgente": True,
-                }
-            st.divider()
+        if pode_pesquisar and pagina != "Procurar":
+            st.button("Procurar profissionais", icon=":material/person_search:", type="primary", **LARGURA,
+                      on_click=_ir_para_procurar, key="atalho_procurar")
 
         if st.button("Terminar sessão", **LARGURA):
             for chave in list(st.session_state.keys()):
@@ -454,7 +477,12 @@ def executar_prospecao(parametros: dict) -> None:
         rodada = len(db.listar_pesquisas_df())
     except ErroBaseDados:
         rodada = 0
-    consultas = gerar_consultas(parametros, 12, rodada)
+    consultas = gerar_consultas(parametros, 10, rodada)
+    try:
+        grupos_conhecidos = db.listar_grupos_facebook()
+    except ErroBaseDados:
+        grupos_conhecidos = []
+    estatisticas: dict = {}
     criterios = {k: v for k, v in parametros.items() if k not in ("max_resultados", "urgente")}
     criterios["prioridade"] = ("Alta. A necessidade é urgente: privilegiar profissionais com "
                                "disponibilidade imediata e contacto direto.")
@@ -465,34 +493,44 @@ def executar_prospecao(parametros: dict) -> None:
         st.error(str(exc))
         return
 
-    with st.status("A procurar profissionais…", expanded=True) as estado:
-        # 1) Pesquisa em fontes públicas
-        st.write(f"{len(consultas)} consultas geradas a partir dos critérios.")
-        barra = st.progress(0.0, text="A pesquisar em fontes públicas…")
+    with st.status("A procurar profissionais à procura de trabalho…", expanded=True) as estado:
+        # 1) Pesquisa: grupos de AVAC no Facebook, LinkedIn e web — só quem pede trabalho.
+        barra = st.progress(0.0, text="A ler grupos de AVAC e a pesquisar publicações…")
         try:
             resultados, avisos_pesquisa = executar_pesquisa(
                 chave_api("TAVILY_API_KEY"), consultas, int(parametros.get("max_resultados", 20)),
                 progresso=lambda feito, total: barra.progress(
-                    feito / total, text=f"A pesquisar… {feito}/{total} consultas"),
+                    feito / total, text=f"A pesquisar… {feito}/{total} fontes"),
+                estatisticas=estatisticas, grupos_conhecidos=grupos_conhecidos,
             )
         except ErroPesquisa as exc:
             estado.update(label="A pesquisa falhou", state="error")
             st.error(f"Erro da Tavily: {exc}")
-            return
+            return None
         except Exception:
             estado.update(label="A pesquisa falhou", state="error")
             st.error("Ocorreu um erro inesperado durante a pesquisa. Tente novamente.")
-            return
+            return None
         for aviso in avisos_pesquisa:
-            st.warning(f"Algumas consultas falharam: {aviso}")
+            st.warning(f"Algumas fontes falharam: {aviso}")
+        parametros["estatisticas"] = {k: estatisticas.get(k, 0) for k in
+                                      ("analisados", "oferta", "servico", "sem_sinal", "grupos_lidos")}
+        resumo_fontes = _resumo_estatisticas(estatisticas)
+        st.write(resumo_fontes)
+        try:
+            db.registar_grupos_facebook(estatisticas.get("grupos_novos", []),
+                                        estatisticas.get("pessoas_por_grupo", {}))
+        except ErroBaseDados:
+            pass
 
         if not resultados:
-            db.concluir_pesquisa(pesquisa_id, 0, 0, 0, 0, [])
-            estado.update(label="Nenhum resultado encontrado", state="complete")
-            st.warning("Nenhum resultado encontrado. Experimente alargar a localização, "
-                       "reduzir os requisitos ou escolher outras especialidades.")
-            return
-        st.write(f"{len(resultados)} resultados únicos encontrados.")
+            db.concluir_pesquisa(pesquisa_id, 0, 0, 0, 0, [], [])
+            estado.update(label="Ninguém a pedir trabalho nesta pesquisa", state="complete")
+            st.warning(f"{resumo_fontes} Nenhuma pessoa escreveu que procura trabalho nos últimos "
+                       f"{DIAS_MAX_PUBLICACAO} dias com estes critérios. Experimente outras especialidades "
+                       "ou volte a pesquisar mais tarde — as publicações novas aparecem todos os dias.")
+            return pesquisa_id
+        st.write(f"{len(resultados)} pessoas escreveram que procuram trabalho. A analisar…")
 
         # 2) Análise: IA da Anthropic; sem chave ou em caso de falha, extração por regras.
         candidatos, descartados, avisos_ia = [], [], []
@@ -535,31 +573,113 @@ def executar_prospecao(parametros: dict) -> None:
             tipo_por_url = {c.url_fonte: c.tipo_resultado for c in candidatos}
             tipo_por_url.update({d["url"]: d["tipo_resultado"] for d in descartados})
             fontes = [{**r, "tipo_resultado": tipo_por_url.get(r["url"], "")} for r in resultados]
-            db.concluir_pesquisa(pesquisa_id, len(resultados), len(candidatos), novos, duplicados, fontes, ids)
+            db.concluir_pesquisa(pesquisa_id, len(resultados), len(candidatos), novos, duplicados, fontes, ids,
+                                 parametros_extra=parametros)
         except ErroBaseDados as exc:
             estado.update(label="Erro ao guardar os candidatos", state="error")
             st.error(str(exc))
+            return None
+
+        # As páginas «Procurar» e «Candidatos» passam a mostrar esta pesquisa.
+        st.session_state["f_pesquisa"] = pesquisa_id
+        estado.update(label=f"Pesquisa concluída — {len(candidatos)} profissionais à procura de trabalho",
+                      state="complete", expanded=False)
+
+    if not candidatos:
+        st.warning(f"{resumo_fontes} As {len(resultados)} publicações com pedido de trabalho não "
+                   "correspondem a profissionais da área. Experimente outras especialidades ou volte a "
+                   "pesquisar mais tarde.")
+    else:
+        st.success(f"{len(candidatos)} profissionais à procura de trabalho: {novos} novos e {duplicados} "
+                   f"que já estavam guardados. {resumo_fontes}")
+    return pesquisa_id
+
+
+def _resumo_estatisticas(est: dict) -> str:
+    """Frase curta sobre o que foi lido e descartado na pesquisa."""
+    if not est:
+        return ""
+    partes = [f"Foram lidas {est.get('analisados', 0)} publicações e páginas"
+              + (f" ({est['grupos_lidos']} grupos de AVAC)" if est.get("grupos_lidos") else "") + "."]
+    ignorados = [f"{est[k]} {nome}" for k, nome in (("oferta", "ofertas de emprego de empresas"),
+                                                    ("servico", "anúncios de venda de serviços"),
+                                                    ("sem_sinal", "sem pedido de trabalho")) if est.get(k)]
+    if ignorados:
+        partes.append("Ignoradas: " + ", ".join(ignorados) + ".")
+    return " ".join(partes)
+
+
+def _parametros_do_formulario() -> dict:
+    return {
+        "especialidades": st.session_state["f_especialidades"],
+        "localizacoes": st.session_state["f_localizacoes"],
+        "outra_localizacao": st.session_state.get("f_outra", ""),
+        "raio_km": st.session_state["f_raio"],
+        "disponibilidade": st.session_state["f_disponibilidade"],
+        "tipo_contratacao": st.session_state["f_tipo"],
+        "exige_fgas": st.session_state["f_fgas"],
+        "max_resultados": st.session_state["f_max"],
+        "urgente": True,
+    }
+
+
+def pagina_procurar(df: pd.DataFrame) -> None:
+    """Página de pesquisa: critérios em cima, resultados da pesquisa logo por baixo."""
+    cabecalho("Procurar profissionais",
+              "Técnicos e engenheiros que escreveram que procuram trabalho")
+    if _vista_detalhe():
+        return
+    for chave, valor in _OMISSOES_PESQUISA.items():
+        st.session_state.setdefault(chave, valor)
+
+    with st.form("form_pesquisa", border=True):
+        a, b = st.columns([1.6, 1])
+        a.multiselect("Especialidades", TODAS_ESPECIALIDADES, key="f_especialidades",
+                      placeholder="Todas as de AVAC e refrigeração",
+                      help="Sem seleção, são procurados técnicos de AVAC, refrigeração e ar condicionado.")
+        b.multiselect("Zona de trabalho", LOCALIZACOES, key="f_localizacoes", placeholder="Escolha as zonas")
+        a, b = st.columns([1.6, 1], vertical_alignment="bottom")
+        a.text_input("Outra localidade (opcional)", key="f_outra", placeholder="Ex.: Torres Vedras",
+                     help="Usada quando escolhe «Outra localização» na zona de trabalho.")
+        b.slider("Raio (km)", 5, 150, key="f_raio", step=5)
+        with st.expander("Mais critérios (opcional)"):
+            a, b = st.columns(2)
+            a.multiselect("Disponibilidade", DISPONIBILIDADES, key="f_disponibilidade", placeholder="Qualquer")
+            b.selectbox("Tipo de contratação", TIPOS_CONTRATACAO, key="f_tipo")
+            a, b = st.columns(2, vertical_alignment="bottom")
+            a.slider("Máximo de resultados", 5, 50, key="f_max", step=5)
+            b.checkbox("Exigir certificação F-Gas", key="f_fgas")
+        with st.container(horizontal=True, gap="small"):
+            procurar = st.form_submit_button("Procurar profissionais", type="primary", icon=":material/search:")
+            st.form_submit_button("Limpar critérios", icon=":material/restart_alt:", on_click=_nova_pesquisa)
+    st.caption(f"Onde procuramos: grupos públicos de AVAC no Facebook, publicações do LinkedIn e da web. "
+               f"Só entram pessoas que escreveram que procuram trabalho nos últimos {DIAS_MAX_PUBLICACAO} "
+               "dias — ofertas de emprego, empresas e anúncios de venda de serviços são ignorados.")
+
+    if procurar:
+        executar_prospecao(_parametros_do_formulario())
+        try:
+            df = db.listar_candidatos_df()
+        except ErroBaseDados as exc:
+            st.error(str(exc))
             return
 
-        # A página «Candidatos» passa a mostrar esta pesquisa.
-        st.session_state["f_pesquisa"] = pesquisa_id
-        estado.update(label=f"Prospeção concluída — {novos} novos candidatos", state="complete",
-                      expanded=False)
-
-    empregados = sum(d.get("motivo") == MOTIVO_EMPREGADO for d in descartados)
-    nota_empregados = (f" · {empregados} perfis ignorados por estarem empregados, sem sinais de "
-                       "procurar trabalho") if empregados else ""
-    if not candidatos:
-        st.warning(f"Foram analisados {len(resultados)} resultados, mas nenhum corresponde a um "
-                   "profissional à procura de trabalho (empresas, anúncios, diretórios e pessoas "
-                   f"empregadas são ignorados){nota_empregados}. Tente outra especialidade ou zona.")
+    # Resultados: a pesquisa escolhida (por omissão, a mais recente).
+    st.markdown("#### Resultados")
+    if df.empty:
+        st.info("Ainda não há candidatos. Escolha os critérios e clique em «Procurar profissionais».")
         return
-    st.success(f"{len(candidatos)} profissionais à procura de trabalho: {novos} novos e {duplicados} que "
-               f"já estavam guardados{nota_empregados} · {len(descartados) - empregados} outros resultados "
-               "descartados (empresas, anúncios e outros).")
-    if st.session_state.get("pagina") != "Candidatos":
-        st.button("Ver os candidatos desta pesquisa", icon=":material/group:", type="primary",
-                  key="ver_pesquisa_nova", on_click=_abrir_pesquisa, args=(pesquisa_id,))
+    resultados = _escolher_pesquisa(df)
+    ativos = resultados[resultados["estado"] != "Arquivado"]
+    if ativos.empty:
+        st.info("Nesta pesquisa não há candidatos para mostrar. Faça uma nova pesquisa ou escolha outra.")
+        return
+    peso = {"Confirmada": 0, "Provável": 1, "Desconhecida": 2, "Não disponível": 3}
+    ativos = ativos.assign(_d=ativos["disponibilidade_classificacao"].map(peso).fillna(2)) \
+        .sort_values(["_d", "score"], ascending=[True, False]).drop(columns="_d")
+    com_contacto = int((ativos["telefone"].astype(bool) | ativos["email"].astype(bool)).sum())
+    st.markdown(f"**{len(ativos)} profissionais** · {com_contacto} com telefone ou email")
+    _grelha_candidatos(ativos, "procurar")
 
 
 def _abrir_pesquisa(pesquisa_id: int) -> None:
@@ -653,7 +773,7 @@ def pagina_painel(df: pd.DataFrame) -> None:
     if _vista_detalhe():
         return
     if df.empty:
-        st.info("Ainda não existem candidatos. Use «Procurar profissionais», na barra lateral, "
+        st.info("Ainda não existem candidatos. Use a página «Procurar» "
                 "para encontrar os primeiros profissionais.")
         return
 
@@ -1512,7 +1632,7 @@ def pagina_candidatos(df: pd.DataFrame) -> None:
         st.caption("Perfil de gestor: são apresentados os candidatos em fase de entrevista, "
                    "avaliação, aprovação e contratação.")
     if df.empty:
-        st.info("Ainda não existem candidatos. Use «Procurar profissionais», na barra lateral, "
+        st.info("Ainda não existem candidatos. Use a página «Procurar» "
                 "para encontrar os primeiros.")
         if u["perfil"] != "Gestor":
             _formulario_candidato_manual()
@@ -1927,7 +2047,9 @@ def main() -> None:
         st.stop()
 
     try:
-        if pagina == "Painel":
+        if pagina == "Procurar":
+            pagina_procurar(df)
+        elif pagina == "Painel":
             pagina_painel(df)
         elif pagina == "Candidatos":
             pagina_candidatos(df)

@@ -1,80 +1,174 @@
 """
-search_engine.py — Geração de consultas e pesquisa de informação pública
-através da Tavily API.
+search_engine.py — Pesquisa de profissionais À PROCURA DE TRABALHO através da Tavily API.
 
-A pesquisa usa exclusivamente o índice público da Tavily: não há acesso a
-páginas com autenticação, CAPTCHAs ou paywalls, nem recolha direta (scraping)
-de websites.
+Estratégia (testada com resultados reais):
+- A melhor fonte são os grupos públicos de Facebook de AVAC: cada página de grupo traz as
+  publicações recentes com autor, data e texto. Cada publicação é tratada como um resultado.
+- Pesquisas complementares procuram publicações com «procuro trabalho/emprego» (Facebook,
+  LinkedIn e web em geral).
+- Só passam para análise textos em que a própria pessoa diz que procura trabalho. Ofertas de
+  emprego, empresas a recrutar, subempreitadas e anúncios de venda de serviços (preços,
+  orçamentos) são descartados logo aqui — antes da IA, o que também torna a pesquisa mais rápida.
+
+A pesquisa usa exclusivamente o índice público da Tavily: não há acesso a páginas com
+autenticação, CAPTCHAs ou paywalls, nem recolha direta (scraping) de websites.
 """
 
 from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
 from typing import Callable, Optional
 
-from utils import extrair_dominio, limpar_texto, normalizar_url, url_segura
+from utils import extrair_dominio, limpar_texto, normalizar_texto, normalizar_url, url_segura
 
 # Limite de texto por resultado enviado à IA (controla custo e tempo de resposta).
 MAX_CARACTERES_CONTEUDO = 6000
 TEMPO_LIMITE_SEGUNDOS = 45
+# Publicações mais antigas do que isto já não interessam (a pessoa provavelmente já arranjou trabalho).
+DIAS_MAX_PUBLICACAO = 90
 
-# Domínios que nunca correspondem a candidatos (lojas, classificados de equipamento, vídeo…).
+# Grupos públicos de Facebook de AVAC/refrigeração onde técnicos publicam «procuro trabalho».
+# São lidos em todas as pesquisas; grupos novos encontrados nas pesquisas também são lidos.
+GRUPOS_FACEBOOK = [
+    "https://www.facebook.com/groups/428467057269607",   # Técnicos ar condicionado e AVAC
+    "https://www.facebook.com/groups/186360468885355",   # Montadores de condutas e canalizadores de AVAC
+    "https://www.facebook.com/groups/517940446700287",   # Oferta de trabalhos AVAC Portugal e mundo
+    "https://www.facebook.com/groups/166298864018421",
+]
+MAX_GRUPOS_NOVOS = 6
+
+# Domínios que nunca têm candidatos: lojas, vídeo, portais de ofertas de emprego, agências e
+# classificados (OLX/CustoJusto têm sobretudo ofertas de empresas e venda de serviços).
 DOMINIOS_EXCLUIDOS = [
     "amazon.es", "amazon.com", "ebay.com", "aliexpress.com", "leroymerlin.pt",
     "worten.pt", "fnac.pt", "mediamarkt.pt", "kuantokusta.pt", "youtube.com",
-    "tiktok.com", "pinterest.com", "pinterest.pt", "wikipedia.org",
-    # Portais de ofertas de emprego e agências: publicam vagas, não candidatos.
+    "tiktok.com", "pinterest.com", "pinterest.pt", "wikipedia.org", "instagram.com",
     "net-empregos.com", "emprego.sapo.pt", "pt.indeed.com", "indeed.com", "pt.jobsora.com",
     "jobsora.com", "manpower.pt", "adecco.com", "randstad.pt", "kellyservices.pt",
     "pt.jooble.org", "jooble.org", "glassdoor.com", "glassdoor.pt", "careerjet.pt",
     "itjobs.pt", "expressoemprego.pt", "pt.talent.com", "talent.com", "linkedin.com/jobs",
     "emprego.com", "jobleads.com", "gigroup.com", "pt.gigroup.com", "evolverh.pt", "egor.pt",
-    "bracos.app", "emprego.clan.pt", "sercanto.pt", "pt.trabajo.org", "trabajo.org", "trabalhar.pt", "empregosonline.pt", "workana.com", "jobatus.pt", "kitempleo.pt",
+    "bracos.app", "emprego.clan.pt", "sercanto.pt", "pt.trabajo.org", "trabajo.org", "trabalhar.pt",
+    "empregosonline.pt", "workana.com", "jobatus.pt", "kitempleo.pt", "eurofirms.com", "hays.pt",
+    "olx.pt", "m.olx.pt", "custojusto.pt", "fixando.pt", "zaask.pt",
 ]
 
-# Sinais de que um resultado é uma OFERTA de emprego (não um profissional). Os perfis
-# pessoais do LinkedIn nunca são filtrados por estes sinais.
+# --- Classificação do texto (sempre sobre texto normalizado: minúsculas, sem acentos) ---------
+
+# A própria pessoa diz que procura trabalho.
+_RE_PROCURA = re.compile(
+    r"\bprocuro (?:um |uma |novo |nova )?(?:trabalho|emprego|oportunidade|colocacao)\b|"
+    r"\b(?:estou|ando) (?:a )?procura de (?:um |uma |novo |nova )?(?:trabalho|emprego|oportunidade)\b|"
+    r"\bestou procurando (?:trabalho|emprego)\b|"
+    r"\bdisponivel para (?:trabalhar|comecar|inicio imediato|integrar)\b|"
+    r"\bopen ?to ?work\b|\bdesempregad[oa]\b"
+)
+# Empresa a recrutar, subempreitadas ou pedidos de equipas.
 _RE_OFERTA = re.compile(
-    r"\(m/f\)|\bm/f\b|ofertas? de emprego|\bvagas?\b|\brecrut(?:a|amento)\b|candidat[ae]-se|"
-    r"estamos a recrutar|we are hiring|job offer|/jobs?/|/vagas?/|/empregos?/|/careers?/|/carreiras?/|"
-    r"bolsa[ _-]?(?:de[ _-])?emprego|oportunidades de emprego|\bprocuramos\b|precisa-se|admite-se|"
-    r"\badmitimos\b|contrata-se",
-    re.IGNORECASE,
+    r"\ba recrutar\b|\brecrutamos\b|\brecrutamento\b|\bprocuramos\b|\bsolicito o envio\b|"
+    r"\bentrada imediata\b|\bprecisa(?:m)? se\b|\bprecisamos\b|"
+    r"\badmite se\b|\badmitimos\b|\bcontrata se\b|\bcontratamos\b|\boferecemos\b|\benviar cv\b|"
+    r"\benvie (?:o )?(?:seu )?cv\b|\bcandidaturas?\b|\bm f\b|\bvagas? (?:de|para)\b|"
+    r"\bprocuro para\b|\bprocuro (?:equipas?|oficiais|tecnicos|profissionais|montadores|ajudantes|"
+    r"pessoal|colaboradore?s?|subempreiteiros?)\b|\bsub ?empreitada\b|\bofertas? de (?:emprego|trabalho)\b|"
+    r"\bestamos a contratar\b|\bvem fazer parte\b|\bjunta te\b"
+)
+# Venda de serviços a clientes (preços, orçamentos): não é alguém à procura de emprego.
+_RE_SERVICO = re.compile(
+    r"\d+ ?(?:€|eur\b|euros\b)|€ ?\d+|\borcamentos?\b|\bprecos?\b|\bdesde \d+|"
+    r"\bfaco (?:instalac|manutenc|montagem)|\bpromocao\b|\bvendo\b"
 )
 
 
+def classificar_texto(titulo: str, texto: str) -> str:
+    """'procura' (pessoa à procura de trabalho), 'oferta', 'servico' ou 'sem_sinal'."""
+    t = normalizar_texto(f"{titulo} {texto}")
+    # Os preços procuram-se no texto original (a normalização remove o símbolo €).
+    servico = bool(_RE_SERVICO.search(t) or _RE_SERVICO.search(f"{titulo} {texto}".lower()))
+    if _RE_OFERTA.search(t):
+        return "oferta"
+    if not _RE_PROCURA.search(t):
+        return "servico" if servico else "sem_sinal"
+    if servico and not re.search(r"\bprocuro (?:trabalho|emprego)\b", t):
+        return "servico"
+    return "procura"
+
+
 def parece_oferta_emprego(url: str, titulo: str, resumo: str) -> bool:
-    """True se o resultado for uma oferta de emprego e não o perfil de um profissional."""
-    if "linkedin.com/in/" in url.lower():
-        return False
-    return bool(_RE_OFERTA.search(f"{url} {titulo}") or _RE_OFERTA.search(resumo[:300]))
-
-# Termos de pesquisa associados a cada opção de disponibilidade.
-_TERMOS_DISPONIBILIDADE = {
-    "Disponibilidade imediata": '"disponibilidade imediata"',
-    "Deslocações": "deslocações",
-    "Trabalho fora de Lisboa": '"disponível para deslocações"',
-    "Assistência urgente": "piquete urgências",
-    "Trabalho por turnos": "turnos",
-    "Fins de semana": '"fins de semana"',
-}
-
-_TERMOS_CONTRATACAO = {
-    "Prestação de serviços": 'freelancer OR "prestação de serviços" OR "trabalhador independente"',
-    "Subcontratação": 'subempreiteiro OR "subcontratação" OR "trabalhador independente"',
-    "Trabalho pontual": 'freelancer OR biscates OR "trabalhos pontuais"',
-    "Trabalho temporário": '"trabalho temporário" OR "disponibilidade imediata"',
-}
+    """True se o texto for uma oferta de emprego."""
+    return classificar_texto(titulo, f"{url} {resumo}") == "oferta"
 
 
-class ErroPesquisa(Exception):
-    """Erro da pesquisa com mensagem adequada para mostrar ao utilizador."""
+# --- Publicações de grupos de Facebook --------------------------------------------------------
+
+_RE_PUBLICACAO = re.compile(
+    r"^#{2,4} \[(?P<autor>[^\]]+?)\s*·\s*(?P<data>\d{4}-\d{2}-\d{2}[^\]]*)\]\((?P<url>https?://[^)\s]+)\)\s*$",
+    re.MULTILINE,
+)
+_RE_AUTOR_URL = re.compile(r"\*\*Author:\*\*\s*\[[^\]]*\]\((https?://[^)\s]+)\)")
+_RE_TITULO_GRUPO = re.compile(r"^# (.+)$", re.MULTILINE)
+
+
+def _data_publicacao(texto: str) -> Optional[date]:
+    try:
+        return datetime.fromisoformat(texto.strip()[:10]).date()
+    except ValueError:
+        return None
+
+
+def dividir_publicacoes(conteudo: str, url_pagina: str, dias_max: int = DIAS_MAX_PUBLICACAO,
+                        hoje: Optional[date] = None) -> list[dict]:
+    """Divide a página de um grupo de Facebook nas suas publicações (só as recentes)."""
+    hoje = hoje or date.today()
+    conteudo = conteudo or ""
+    m_titulo = _RE_TITULO_GRUPO.search(conteudo)
+    titulo_grupo = m_titulo[1].strip() if m_titulo else "Grupo de Facebook"
+    marcas = list(_RE_PUBLICACAO.finditer(conteudo))
+    publicacoes = []
+    for i, m in enumerate(marcas):
+        corpo = conteudo[m.end(): marcas[i + 1].start() if i + 1 < len(marcas) else len(conteudo)]
+        publicada = _data_publicacao(m["data"])
+        if publicada and (hoje - publicada) > timedelta(days=dias_max):
+            continue
+        texto = re.split(r"\n\s*- \*\*Author:\*\*", corpo)[0].strip()
+        if len(texto) < 15:
+            continue
+        autor = limpar_texto(m["autor"], 150)
+        m_autor = _RE_AUTOR_URL.search(corpo)
+        url_autor = url_segura(m_autor[1]) if m_autor else ""
+        publicacoes.append({
+            "url": url_segura(m["url"]) or url_pagina,
+            "titulo": f"{autor} · {titulo_grupo}",
+            "dominio": "facebook.com",
+            "resumo": limpar_texto(texto, 800),
+            "conteudo": limpar_texto(
+                f"Autor da publicação: {autor}\n"
+                + (f"Perfil do autor: {url_autor}\n" if url_autor else "")
+                + f"Publicado em: {publicada.isoformat() if publicada else 'data desconhecida'}\n"
+                f"Grupo: {titulo_grupo}\n\n{texto}")[:MAX_CARACTERES_CONTEUDO],
+            "autor": autor,
+            "url_autor": url_autor,
+            "data_publicacao": publicada.isoformat() if publicada else "",
+        })
+    return publicacoes
+
+
+def _url_grupo(url: str) -> str:
+    """URL base de um grupo de Facebook (sem /posts/… ou /permalink/…), ou ''."""
+    m = re.match(r"https?://(?:www\.|m\.)?facebook\.com/groups/([^/?#]+)", url or "")
+    return f"https://www.facebook.com/groups/{m[1]}" if m else ""
+
+
+# --- Consultas --------------------------------------------------------------------------------
+
+_AREA = 'AVAC OR "ar condicionado" OR refrigeração OR climatização OR "técnico de frio"'
 
 
 def _locais_de_pesquisa(localizacoes: list[str], outra: str) -> list[str]:
     """Converte as zonas escolhidas em termos de pesquisa."""
-    mapa = {"Lisboa Centro": "Lisboa", "Grande Lisboa": "Lisboa", "Margem Sul": '"Margem Sul" Setúbal'}
+    mapa = {"Lisboa Centro": "Lisboa", "Grande Lisboa": "Lisboa", "Margem Sul": "Setúbal"}
     locais = []
     for local in localizacoes or []:
         if local == "Outra localização":
@@ -85,74 +179,51 @@ def _locais_de_pesquisa(localizacoes: list[str], outra: str) -> list[str]:
     return list(dict.fromkeys(locais)) or ["Lisboa"]
 
 
-def gerar_consultas(parametros: dict, limite: int = 8, rodada: int = 0) -> list[str]:
+def gerar_consultas(parametros: dict, limite: int = 10, rodada: int = 0) -> list[str]:
     """
-    Gera automaticamente as consultas combinando especialidade, localização,
-    certificações, disponibilidade e tipo de trabalho.
+    Consultas que só encontram pessoas a dizer que procuram trabalho. As consultas gerais
+    (grupos de Facebook e LinkedIn) vêm primeiro; depois as de cada especialidade e zona.
     """
     especialidades = list(parametros.get("especialidades") or []) or [
-        "Técnico de AVAC", "Técnico de refrigeração", "Técnico de ar condicionado",
+        "técnico de AVAC", "técnico de refrigeração", "técnico de ar condicionado",
     ]
     locais = _locais_de_pesquisa(parametros.get("localizacoes"), parametros.get("outra_localizacao", ""))
-    disponibilidade = [
-        _TERMOS_DISPONIBILIDADE[d] for d in parametros.get("disponibilidade") or []
-        if d in _TERMOS_DISPONIBILIDADE
+    engenheiros = any("engenheir" in e.lower() for e in especialidades)
+
+    gerais = [
+        f'site:facebook.com/groups "procuro trabalho" {_AREA}',
+        f'site:facebook.com/groups "procuro emprego" {_AREA}',
+        f'site:facebook.com/groups "procuro uma oportunidade" OR "procuro oportunidade" {_AREA}',
+        f'site:pt.linkedin.com/posts "procuro emprego" OR "procuro trabalho" OR "à procura de emprego" {_AREA}',
     ]
-    termo_disp = disponibilidade[0] if disponibilidade else ""
-    termo_contrato = _TERMOS_CONTRATACAO.get(parametros.get("tipo_contratacao", ""), "")
-    exige_fgas = bool(parametros.get("exige_fgas")) or any(
-        "fluorad" in e.lower() or "f-gas" in e.lower() for e in especialidades
-    )
+    if engenheiros:
+        gerais.append('site:pt.linkedin.com/posts engenheiro AVAC OR climatização OR energia '
+                      '"procuro" OR "à procura de" OR "#OpenToWork"')
+    if parametros.get("exige_fgas"):
+        gerais.append('"procuro trabalho" OR "procuro emprego" "gases fluorados" OR "F-Gas" técnico')
 
-    # Todas as consultas exigem um SINAL DE PROCURA DE TRABALHO (open to work, procuro emprego,
-    # disponível, recém-formado, trabalhador independente). Perfis genéricos — quase sempre de
-    # pessoas empregadas — deixam de ser pesquisados. Nunca ofertas de emprego de empresas.
-    # LinkedIn só de Portugal (pt.linkedin.com).
-    modelos = [
-        'site:pt.linkedin.com/in "{esp}" {loc} "#OpenToWork" OR "open to work" OR "à procura de novas oportunidades" OR "disponível de imediato"',
-        '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de emprego"',
-        # Grupos públicos de Facebook onde os técnicos publicam «procuro trabalho».
-        'site:facebook.com/groups {esp} "procuro trabalho" OR "procuro emprego" OR "procuro uma oportunidade" OR "estou disponível"',
-        # Anúncios individuais do OLX de técnicos que oferecem os seus serviços.
-        'site:olx.pt/d/anuncio {esp} {loc}',
-        'site:facebook.com "{esp}" {loc} "procuro trabalho" OR "procuro emprego" OR "estou disponível"',
-        'site:pt.linkedin.com/in "{esp}" {loc} "à procura de" OR "procuro" OR "disponível para"',
-        '"{esp}" {loc} currículo OR CV "procuro" OR "disponível" telemóvel OR email',
-        # Recém-formados (cursos de AVAC e F-Gas) à procura do primeiro emprego.
-        '"{esp}" {loc} "recém-formado" OR "formação concluída" OR "curso concluído" OR "primeiro emprego"',
-        '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" disponível',
-    ]
-    if termo_contrato:
-        modelos.insert(1, '"{esp}" {loc} ' + termo_contrato)
-    if exige_fgas:
-        modelos.insert(1, '"{esp}" {loc} "gases fluorados" OR "F-Gas" certificado técnico')
+    por_especialidade = []
+    for i, esp in enumerate(especialidades):
+        loc = locais[i % len(locais)]
+        por_especialidade.append(f'"{esp}" "procuro trabalho" OR "procuro emprego" OR "à procura de emprego" {loc}')
+        por_especialidade.append(f'site:facebook.com "{esp}" "procuro trabalho" OR "procuro emprego" {loc}')
+    # Cada nova pesquisa começa noutro ponto, para trazer resultados diferentes.
+    if rodada and por_especialidade:
+        desloc = (rodada * 2) % len(por_especialidade)
+        por_especialidade = por_especialidade[desloc:] + por_especialidade[:desloc]
 
-    # Cada nova pesquisa começa noutro ponto da lista de modelos e de especialidades,
-    # para não devolver sempre os mesmos resultados (e os mesmos duplicados).
-    if rodada:
-        desloc = (rodada * 3) % len(modelos)
-        modelos = modelos[desloc:] + modelos[:desloc]
-        desloc_esp = rodada % len(especialidades)
-        especialidades = especialidades[desloc_esp:] + especialidades[:desloc_esp]
+    return list(dict.fromkeys(gerais + por_especialidade))[:limite]
 
-    consultas: list[str] = []
-    # Percorre os modelos em rondas para que todas as especialidades fiquem representadas.
-    for indice_modelo, modelo in enumerate(modelos):
-        for indice_esp, esp in enumerate(especialidades):
-            loc = locais[(indice_esp + indice_modelo) % len(locais)]
-            consulta = modelo.format(esp=esp, loc=loc)
-            if termo_disp and indice_modelo == 0:
-                consulta += f" {termo_disp}"
-            if consulta not in consultas:
-                consultas.append(consulta)
-            if len(consultas) >= limite:
-                return consultas
-    return consultas
+
+# --- Execução ---------------------------------------------------------------------------------
+
+class ErroPesquisa(Exception):
+    """Erro da pesquisa com mensagem adequada para mostrar ao utilizador."""
 
 
 def _criar_cliente(api_key: str):
     if not (api_key or "").strip():
-        raise ErroPesquisa("Falta a chave TAVILY_API_KEY. Introduza-a na barra lateral ou no ficheiro .env.")
+        raise ErroPesquisa("Falta a chave TAVILY_API_KEY nos «Secrets» do servidor (ou no ficheiro .env).")
     try:
         from tavily import TavilyClient
     except ImportError as exc:
@@ -177,11 +248,11 @@ def _traduzir_erro(exc: Exception) -> str:
     return "A Tavily devolveu um erro inesperado. Tente novamente dentro de momentos."
 
 
-def _pesquisar_uma(cliente, consulta: str, max_resultados: int) -> list[dict]:
+def _pesquisar_uma(cliente, consulta: str) -> list[dict]:
     resposta = cliente.search(
         query=consulta,
         search_depth="advanced",
-        max_results=max_resultados,
+        max_results=10,
         include_raw_content=True,
         exclude_domains=DOMINIOS_EXCLUIDOS,
         country="portugal",
@@ -190,67 +261,122 @@ def _pesquisar_uma(cliente, consulta: str, max_resultados: int) -> list[dict]:
     return (resposta or {}).get("results") or []
 
 
+def _ler_grupos(cliente, urls: list[str]) -> list[dict]:
+    """Lê as páginas públicas dos grupos (publicações recentes)."""
+    if not urls:
+        return []
+    resposta = cliente.extract(urls=urls, extract_depth="basic", timeout=TEMPO_LIMITE_SEGUNDOS)
+    return [{"url": r.get("url"), "title": "", "content": "", "raw_content": r.get("raw_content") or ""}
+            for r in (resposta or {}).get("results") or []]
+
+
+def _para_resultados(bruto: dict, origem: str) -> list[dict]:
+    """Converte um resultado da Tavily em um ou mais resultados (um por publicação de grupo)."""
+    url = url_segura(bruto.get("url"))
+    if not url:
+        return []
+    raw = bruto.get("raw_content") or ""
+    if _url_grupo(url) and _RE_PUBLICACAO.search(raw):
+        return [{**p, "consulta": origem} for p in dividir_publicacoes(raw, url)]
+    conteudo = limpar_texto(raw or bruto.get("content") or "")
+    resumo = limpar_texto(bruto.get("content") or "", 800) or conteudo[:800]
+    if len(conteudo) < 40 and len(resumo) < 40:
+        return []
+    return [{
+        "url": url,
+        "titulo": limpar_texto(bruto.get("title"), 300),
+        "dominio": extrair_dominio(url),
+        "resumo": resumo,
+        "conteudo": conteudo[:MAX_CARACTERES_CONTEUDO],
+        "consulta": origem,
+    }]
+
+
+def _executar_em_paralelo(executor, pedidos: list[tuple[str, Callable[[], list[dict]]]], brutos: list,
+                          avisos: list[str], progresso, feito: list[int], total: int) -> int:
+    """Corre os pedidos em paralelo; devolve o número de falhas."""
+    falhas = 0
+    tarefas = {executor.submit(funcao): origem for origem, funcao in pedidos}
+    for tarefa in as_completed(tarefas):
+        try:
+            brutos.extend((tarefas[tarefa], r) for r in tarefa.result())
+        except Exception as exc:  # cada pedido falha de forma independente
+            falhas += 1
+            mensagem = _traduzir_erro(exc)
+            if mensagem not in avisos:
+                avisos.append(mensagem)
+        feito[0] += 1
+        if progresso:
+            progresso(min(feito[0], total), total)
+    return falhas
+
+
 def executar_pesquisa(
     api_key: str,
     consultas: list[str],
     max_resultados_total: int = 30,
     progresso: Optional[Callable[[int, int], None]] = None,
+    estatisticas: Optional[dict] = None,
+    grupos_conhecidos: Optional[list[str]] = None,
 ) -> tuple[list[dict], list[str]]:
     """
-    Executa as consultas em paralelo e devolve (resultados únicos, avisos).
-    Lança ErroPesquisa apenas se nenhuma consulta tiver sucesso.
+    Pesquisa + leitura dos grupos de Facebook, em paralelo. Devolve (resultados de pessoas à
+    procura de trabalho, avisos). `estatisticas` (opcional) recebe as contagens do que foi
+    descartado, os grupos novos descobertos e as pessoas encontradas por grupo.
+    Lança ErroPesquisa apenas se nenhum pedido tiver sucesso.
     """
     cliente = _criar_cliente(api_key)
-    por_consulta = max(5, min(10, -(-max_resultados_total // max(len(consultas), 1)) + 3))
-
-    brutos: list[tuple[int, dict]] = []
+    grupos = list(dict.fromkeys(GRUPOS_FACEBOOK + [g for g in (grupos_conhecidos or []) if _url_grupo(g)]))
+    lotes_grupos = [grupos[i:i + 10] for i in range(0, len(grupos), 10)]  # a Tavily lê até 20 por pedido
+    brutos: list[tuple[str, dict]] = []
     avisos: list[str] = []
-    falhas = 0
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        tarefas = {
-            executor.submit(_pesquisar_uma, cliente, consulta, por_consulta): indice
-            for indice, consulta in enumerate(consultas)
-        }
-        for concluidas, tarefa in enumerate(as_completed(tarefas), start=1):
-            try:
-                for resultado in tarefa.result():
-                    brutos.append((tarefas[tarefa], resultado))
-            except Exception as exc:  # cada consulta falha de forma independente
-                falhas += 1
-                mensagem = _traduzir_erro(exc)
-                if mensagem not in avisos:
-                    avisos.append(mensagem)
-            if progresso:
-                progresso(concluidas, len(consultas))
+    total = len(consultas) + len(lotes_grupos) + 1
+    feito = [0]
 
-    if falhas == len(consultas) and consultas:
+    pedidos = [(c, lambda c=c: _pesquisar_uma(cliente, c)) for c in consultas]
+    pedidos += [("Grupos de Facebook de AVAC", lambda l=l: _ler_grupos(cliente, l)) for l in lotes_grupos]
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        falhas = _executar_em_paralelo(executor, pedidos, brutos, avisos, progresso, feito, total)
+        # Grupos novos encontrados nas pesquisas: lê também as publicações recentes deles.
+        novos = []
+        for _, r in brutos:
+            g = _url_grupo(r.get("url") or "")
+            if g and g not in grupos and g not in novos:
+                novos.append(g)
+        novos = novos[:MAX_GRUPOS_NOVOS]
+        if novos:
+            falhas += _executar_em_paralelo(
+                executor, [("Grupos encontrados na pesquisa", lambda: _ler_grupos(cliente, novos))],
+                brutos, avisos, progresso, feito, total)
+        elif progresso:
+            progresso(total, total)
+
+    if falhas >= len(pedidos) + (1 if novos else 0):
         raise ErroPesquisa(avisos[0] if avisos else "A pesquisa falhou.")
 
-    # Remove duplicados (mesmo URL) e resultados sem origem verificável.
+    # Remove duplicados (mesmo URL) e fica só com quem diz que procura trabalho.
+    contagem = {"analisados": 0, "oferta": 0, "servico": 0, "sem_sinal": 0}
     vistos: set[str] = set()
     resultados: list[dict] = []
-    for indice_consulta, r in sorted(brutos, key=lambda par: -(par[1].get("score") or 0)):
-        url = url_segura(r.get("url"))
-        chave = normalizar_url(url)
-        if not url or not chave or chave in vistos:
-            continue
-        vistos.add(chave)
-        conteudo = limpar_texto(r.get("raw_content") or r.get("content") or "")
-        resumo = limpar_texto(r.get("content") or "", 800)
-        if len(conteudo) < 40 and len(resumo) < 40:
-            continue
-        if parece_oferta_emprego(url, limpar_texto(r.get("title")), resumo):
-            continue  # ofertas de emprego não interessam: procuramos profissionais
-        resultados.append(
-            {
-                "url": url,
-                "titulo": limpar_texto(r.get("title"), 300),
-                "dominio": extrair_dominio(url),
-                "resumo": resumo,
-                "conteudo": conteudo[:MAX_CARACTERES_CONTEUDO],
-                "consulta": consultas[indice_consulta],
-            }
-        )
-        if len(resultados) >= max_resultados_total:
-            break
-    return resultados, avisos
+    for origem, bruto in sorted(brutos, key=lambda par: -(par[1].get("score") or 0)):
+        for r in _para_resultados(bruto, origem):
+            chave = normalizar_url(r["url"])
+            if not chave or chave in vistos:
+                continue
+            vistos.add(chave)
+            contagem["analisados"] += 1
+            tipo = classificar_texto(r["titulo"], r["conteudo"])
+            if tipo != "procura":
+                contagem[tipo] += 1
+                continue
+            resultados.append(r)
+    resultados.sort(key=lambda r: r.get("data_publicacao") or "", reverse=True)  # mais recentes primeiro
+    if estatisticas is not None:
+        pessoas_por_grupo: dict[str, int] = {}
+        for r in resultados[:max_resultados_total]:
+            g = _url_grupo(r["url"])
+            if g:
+                pessoas_por_grupo[g] = pessoas_por_grupo.get(g, 0) + 1
+        estatisticas.update(contagem, grupos_novos=novos, pessoas_por_grupo=pessoas_por_grupo,
+                            grupos_lidos=len(grupos) + len(novos))
+    return resultados[:max_resultados_total], avisos

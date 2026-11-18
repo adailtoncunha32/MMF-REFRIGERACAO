@@ -632,6 +632,17 @@ class Pesquisa(Base):
     fontes = relationship("Fonte", cascade="all, delete-orphan", back_populates="pesquisa")
 
 
+class GrupoFacebook(Base):
+    """Grupos públicos de Facebook de AVAC descobertos nas pesquisas (lidos em todas as seguintes)."""
+    __tablename__ = "grupos_facebook"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(300), unique=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    descoberto_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    pessoas_encontradas: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Fonte(Base):
     __tablename__ = "fontes"
 
