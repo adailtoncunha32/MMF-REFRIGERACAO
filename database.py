@@ -632,13 +632,17 @@ def registar_pesquisa(utilizador: str, parametros: dict, consultas: list[str], u
 
 @_protegido
 def concluir_pesquisa(pesquisa_id: int, total_resultados: int, total_candidatos: int,
-                      novos: int, duplicados: int, fontes: list[dict]) -> None:
+                      novos: int, duplicados: int, fontes: list[dict],
+                      candidato_ids: Optional[list[int]] = None) -> None:
     with sessao() as s:
         p = s.get(Pesquisa, pesquisa_id)
         if not p:
             return
         p.total_resultados, p.total_candidatos = total_resultados, total_candidatos
         p.novos, p.duplicados = novos, duplicados
+        if candidato_ids is not None:
+            # Todos os candidatos encontrados nesta pesquisa (novos e já existentes).
+            p.parametros = {**(p.parametros or {}), "candidatos_ids": list(dict.fromkeys(candidato_ids))}
         for f in fontes:
             s.add(Fonte(pesquisa_id=pesquisa_id, url=(f.get("url") or "")[:600],
                         titulo=limpar_texto(f.get("titulo"), 400),
@@ -654,6 +658,26 @@ def listar_pesquisas_df() -> pd.DataFrame:
         linhas = [{c: getattr(p, c) for c in colunas}
                   for p in s.scalars(select(Pesquisa).order_by(Pesquisa.data.desc()))]
     return pd.DataFrame(linhas, columns=colunas)
+
+
+@_protegido
+def candidatos_por_pesquisa() -> dict[int, list[int]]:
+    """{id da pesquisa: ids dos candidatos encontrados nela}, incluindo os que já existiam."""
+    with sessao() as s:
+        pesquisas = list(s.scalars(select(Pesquisa)))
+        candidatos = list(s.execute(select(Candidato.id, Candidato.pesquisa_id, Candidato.url_fonte,
+                                           Candidato.url_perfil)))
+        resultado: dict[int, list[int]] = {}
+        for p in pesquisas:
+            guardados = (p.parametros or {}).get("candidatos_ids")
+            if guardados is not None:
+                resultado[p.id] = [int(i) for i in guardados]
+                continue
+            # Pesquisas antigas: os candidatos criados nela e os que vieram das mesmas páginas.
+            urls = set(s.scalars(select(Fonte.url).where(Fonte.pesquisa_id == p.id)))
+            resultado[p.id] = [c.id for c in candidatos
+                               if c.pesquisa_id == p.id or c.url_fonte in urls or c.url_perfil in urls]
+    return resultado
 
 
 @_protegido

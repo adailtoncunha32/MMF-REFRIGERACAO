@@ -531,13 +531,14 @@ def executar_prospecao(parametros: dict) -> None:
             tipo_por_url = {c.url_fonte: c.tipo_resultado for c in candidatos}
             tipo_por_url.update({d["url"]: d["tipo_resultado"] for d in descartados})
             fontes = [{**r, "tipo_resultado": tipo_por_url.get(r["url"], "")} for r in resultados]
-            db.concluir_pesquisa(pesquisa_id, len(resultados), len(candidatos), novos, duplicados, fontes)
+            db.concluir_pesquisa(pesquisa_id, len(resultados), len(candidatos), novos, duplicados, fontes, ids)
         except ErroBaseDados as exc:
             estado.update(label="Erro ao guardar os candidatos", state="error")
             st.error(str(exc))
             return
 
-        st.session_state["ids_ultima_pesquisa"] = ids
+        # A página «Candidatos» passa a mostrar esta pesquisa.
+        st.session_state["f_pesquisa"] = pesquisa_id
         estado.update(label=f"Prospeção concluída — {novos} novos candidatos", state="complete",
                       expanded=False)
 
@@ -545,8 +546,29 @@ def executar_prospecao(parametros: dict) -> None:
         st.warning(f"Foram analisados {len(resultados)} resultados, mas nenhum corresponde a um "
                    "profissional individual (empresas, anúncios e diretórios são ignorados).")
         return
-    st.success(f"{novos} novos candidatos guardados · {duplicados} já existiam (duplicados ignorados) · "
-               f"{len(descartados)} resultados descartados. Consulte-os na página «Candidatos».")
+    st.success(f"{len(candidatos)} profissionais encontrados: {novos} novos e {duplicados} que já estavam "
+               f"guardados · {len(descartados)} resultados descartados (empresas, anúncios e outros).")
+    if st.session_state.get("pagina") != "Candidatos":
+        st.button("Ver os candidatos desta pesquisa", icon=":material/group:", type="primary",
+                  key="ver_pesquisa_nova", on_click=_abrir_pesquisa, args=(pesquisa_id,))
+
+
+def _abrir_pesquisa(pesquisa_id: int) -> None:
+    """Abre a página «Candidatos» com os candidatos de uma pesquisa (usado como on_click)."""
+    st.session_state["f_pesquisa"] = pesquisa_id
+    st.session_state["pagina"] = "Candidatos"
+    st.session_state.pop("candidato_aberto", None)
+
+
+def _nao_interessa(candidato_id: int, nome: str) -> None:
+    """Arquiva o candidato (on_click): deixa de aparecer nas listas e não volta como novo."""
+    try:
+        db.atualizar_candidato(candidato_id, {"estado": "Arquivado"}, utilizador_atual()["nome"])
+        db.adicionar_nota(candidato_id, utilizador_atual()["nome"], "Marcado como «Não interessa».")
+        avisar(f"{nome} foi retirado da lista. Pode recuperá-lo em «Mais filtros» → «Mostrar arquivados».",
+               "info")
+    except ErroBaseDados as exc:
+        avisar(str(exc), "error")
 
 
 # ---------------------------------------------------------------------------
@@ -592,8 +614,9 @@ def _linha_candidato(c: pd.Series, prefixo: str, nota: str = "") -> None:
     local = c["concelho"] or c["localizacao"] or "Zona não identificada"
     contacto = " · ".join(n for n, v in (("Telefone", c["telefone"]), ("Email", c["email"])) if v) \
         or "Contacto pelo perfil"
+    pode_arquivar = utilizador_atual()["perfil"] != "Gestor"
     with st.container(border=True):
-        info, acoes = st.columns([2.7, 2.3], vertical_alignment="center")
+        info, acoes = st.columns([2.3, 2.7] if pode_arquivar else [2.7, 2.3], vertical_alignment="center")
         info.markdown(
             f'<div class="ln-topo"><span class="ln-nome">{html.escape(str(c["nome"]))}</span>'
             f'<span class="ln-pont">{int(c["score"] or 0)}%</span></div>'
@@ -601,7 +624,7 @@ def _linha_candidato(c: pd.Series, prefixo: str, nota: str = "") -> None:
             + (f'<div class="ln-nota">{html.escape(nota)}</div>' if nota else ""),
             unsafe_allow_html=True,
         )
-        a, b = acoes.columns(2)
+        a, b, *resto = acoes.columns([1, 1, 1.25] if pode_arquivar else [1, 1])
         if a.button("Abrir", key=f"{prefixo}_{c['id']}", icon=":material/visibility:", type="primary",
                     help="Abrir a ficha para contactar e registar", **LARGURA):
             st.session_state["candidato_aberto"] = int(c["id"])
@@ -609,6 +632,10 @@ def _linha_candidato(c: pd.Series, prefixo: str, nota: str = "") -> None:
         url = url_segura(c["url_perfil"]) or url_segura(c["url_fonte"])
         if url:
             b.link_button("Perfil", url, icon=":material/open_in_new:", **LARGURA)
+        if pode_arquivar:
+            resto[0].button("Não interessa", key=f"{prefixo}_nao_{c['id']}", on_click=_nao_interessa,
+                            args=(int(c["id"]), str(c["nome"])), **LARGURA,
+                            help="Retirar este candidato da lista (fica arquivado)")
 
 
 def pagina_painel(df: pd.DataFrame) -> None:
@@ -711,8 +738,13 @@ def pagina_painel(df: pd.DataFrame) -> None:
             for _, p in pesquisas.iterrows():
                 params = p["parametros"] or {}
                 esp = lista_para_texto((params.get("especialidades") or [])[:2]) or "Técnicos de AVAC em geral"
-                st.markdown(f"{formatar_data(p['data'])} · {int(p['novos'] or 0)} novos  \n"
-                            f"<span class='ln-sub'>{html.escape(esp)}</span>", unsafe_allow_html=True)
+                texto, botao = st.columns([2.2, 1], vertical_alignment="center")
+                texto.markdown(f"{formatar_data(p['data'])} · {int(p['total_candidatos'] or 0)} encontrados, "
+                               f"{int(p['novos'] or 0)} novos  \n"
+                               f"<span class='ln-sub'>{html.escape(esp)}</span>", unsafe_allow_html=True)
+                botao.button("Ver", key=f"painel_pesq_{p['id']}", icon=":material/group:", **LARGURA,
+                             on_click=_abrir_pesquisa, args=(int(p["id"]),),
+                             help="Ver só os candidatos encontrados nesta pesquisa")
 
 
 def _estatisticas(df: pd.DataFrame) -> None:
@@ -1230,11 +1262,10 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         f_rec = b.multiselect("Recomendação", RECOMENDACOES, placeholder="Qualquer")
         f_fonte = c.multiselect("Fonte", sorted({f for f in df["fonte"] if f}), placeholder="Todas")
         f_carta = d.selectbox("Carta de condução", ["Qualquer", *TRI_ESTADO])
-        a, b, c = st.columns([2, 1, 1])
+        a, c = st.columns([3, 1], vertical_alignment="bottom")
         datas = [x for x in df["data_recolha"] if x is not None and not pd.isna(x)]
-        f_datas = a.date_input("Data da pesquisa (intervalo)",
+        f_datas = a.date_input("Data de recolha (intervalo)",
                                value=(min(datas), max(datas)) if datas else (), format="DD/MM/YYYY")
-        f_ultima = bool(st.session_state.get("ids_ultima_pesquisa")) and b.checkbox("Apenas a última pesquisa")
         f_arquivados = c.checkbox("Mostrar arquivados")
 
     filtrado = df
@@ -1276,8 +1307,6 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         filtrado = filtrado[filtrado["carta_conducao"] == f_carta]
     if isinstance(f_datas, (tuple, list)) and len(f_datas) == 2:
         filtrado = filtrado[(filtrado["data_recolha"] >= f_datas[0]) & (filtrado["data_recolha"] <= f_datas[1])]
-    if f_ultima:
-        filtrado = filtrado[filtrado["id"].isin(st.session_state.get("ids_ultima_pesquisa", []))]
 
     if ordem == "Mais recentes":
         filtrado = filtrado.sort_values(["criado_em", "score"], ascending=[False, False])
@@ -1342,6 +1371,10 @@ def _cartao_candidato(c: pd.Series, prefixo: str, motivo: str = "") -> None:
         if url:
             colunas[1].link_button("Perfil", url, icon=":material/open_in_new:",
                                    help="Abrir o perfil original do profissional", **LARGURA)
+        if utilizador_atual()["perfil"] != "Gestor" and c["estado"] != "Arquivado":
+            st.button("Não interessa", key=f"{prefixo}_nao_{c['id']}", icon=":material/close:",
+                      on_click=_nao_interessa, args=(int(c["id"]), str(c["nome"])), **LARGURA,
+                      help="Retirar este candidato da lista (fica arquivado e não volta a aparecer como novo)")
 
 
 def _grelha_candidatos(df: pd.DataFrame, prefixo: str, motivos: pd.Series | None = None,
@@ -1429,6 +1462,32 @@ def _vista_detalhe() -> bool:
     return True
 
 
+def _escolher_pesquisa(df: pd.DataFrame) -> pd.DataFrame:
+    """Seletor de pesquisa: por omissão mostra só os candidatos da pesquisa mais recente."""
+    try:
+        pesquisas = db.listar_pesquisas_df()
+        mapa = db.candidatos_por_pesquisa()
+    except ErroBaseDados as exc:
+        st.error(str(exc))
+        return df
+    if pesquisas.empty:
+        return df
+    descricoes = {0: "Todas as pesquisas"}
+    for _, p in pesquisas.iterrows():
+        pid = int(p["id"])
+        esp = lista_para_texto(((p["parametros"] or {}).get("especialidades") or [])[:2]) or "AVAC em geral"
+        descricoes[pid] = (f"{formatar_data(p['data'])} · {len(mapa.get(pid, []))} candidatos "
+                           f"({int(p['novos'] or 0)} novos) · {esp}")
+    opcoes = [int(p) for p in pesquisas["id"]] + [0]
+    if st.session_state.get("f_pesquisa") not in opcoes:
+        st.session_state["f_pesquisa"] = opcoes[0]  # a mais recente
+    escolha = st.selectbox("Pesquisa", opcoes, key="f_pesquisa", format_func=descricoes.get,
+                           help="Escolha a pesquisa cujos candidatos quer ver.")
+    if escolha:
+        df = df[df["id"].isin(mapa.get(escolha, []))]
+    return df
+
+
 def pagina_candidatos(df: pd.DataFrame) -> None:
     u = utilizador_atual()
     cabecalho("Candidatos", "Pesquise, filtre, contacte e acompanhe cada profissional")
@@ -1444,6 +1503,13 @@ def pagina_candidatos(df: pd.DataFrame) -> None:
         if u["perfil"] != "Gestor":
             _formulario_candidato_manual()
         return
+
+    if u["perfil"] != "Gestor":
+        df = _escolher_pesquisa(df)
+        if df.empty:
+            st.info("Nesta pesquisa não ficou nenhum candidato. Escolha «Todas as pesquisas» ou faça "
+                    "uma nova pesquisa.")
+            return
 
     filtrado, vista = _filtrar_candidatos(df)
     com_contacto = int((filtrado["telefone"].astype(bool) | filtrado["email"].astype(bool)).sum())
