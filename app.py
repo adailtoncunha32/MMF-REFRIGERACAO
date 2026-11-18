@@ -1247,6 +1247,12 @@ def _texto_pesquisavel(linha: pd.Series) -> str:
     ]))
 
 
+def _mascara(df: pd.DataFrame, funcao) -> pd.Series:
+    """Série booleana linha a linha que funciona também com tabelas vazias
+    (DataFrame.apply(axis=1) numa tabela vazia devolve um DataFrame e apaga as colunas)."""
+    return pd.Series([bool(funcao(linha)) for _, linha in df.iterrows()], index=df.index, dtype=bool)
+
+
 def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     """Barra de pesquisa, filtros rápidos, ordenação e filtros avançados. Devolve (filtrado, vista)."""
     a, b, c = st.columns([3, 1.3, 1.1], vertical_alignment="bottom")
@@ -1282,8 +1288,7 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
         filtrado = filtrado[filtrado["estado"] != "Arquivado"]
     if termo.strip():
         palavras = normalizar_texto(termo).split()
-        textos = filtrado.apply(_texto_pesquisavel, axis=1)
-        filtrado = filtrado[textos.apply(lambda tx: all(p in tx for p in palavras))]
+        filtrado = filtrado[_mascara(filtrado, lambda l: all(p in _texto_pesquisavel(l) for p in palavras))]
     if "Com contacto direto" in rapidos:
         filtrado = filtrado[filtrado["telefone"].astype(bool) | filtrado["email"].astype(bool)]
     if "Disponíveis" in rapidos:
@@ -1291,15 +1296,15 @@ def _filtrar_candidatos(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     if "Pontuação 70% ou mais" in rapidos:
         filtrado = filtrado[filtrado["score"] >= 70]
     if "F-Gas" in rapidos:
-        filtrado = filtrado[(filtrado["certificacao_fgas"] == "Sim") | filtrado["certificacoes"].apply(
-            lambda l: any("gas" in str(x).lower() for x in (l or [])))]
+        filtrado = filtrado[_mascara(filtrado, lambda l: l["certificacao_fgas"] == "Sim" or any(
+            "gas" in str(x).lower() for x in (l["certificacoes"] or [])))]
     if "Engenheiros" in rapidos:
-        filtrado = filtrado[filtrado.apply(lambda l: "engenheir" in normalizar_texto(
-            f"{l['cargo']} {lista_para_texto(l['especialidades'])}"), axis=1)]
+        filtrado = filtrado[_mascara(filtrado, lambda l: "engenheir" in normalizar_texto(
+            f"{l['cargo']} {lista_para_texto(l['especialidades'])}"))]
     if "Ainda não contactados" in rapidos:
         filtrado = filtrado[filtrado["data_primeiro_contacto"].isna()]
     if f_esp:
-        filtrado = filtrado[filtrado["especialidades"].apply(lambda l: bool(set(l or []) & set(f_esp)))]
+        filtrado = filtrado[_mascara(filtrado, lambda l: set(l["especialidades"] or []) & set(f_esp))]
     if f_local:
         filtrado = filtrado[filtrado["concelho"].isin(f_local) | filtrado["localizacao"].isin(f_local)]
     if f_estado:
