@@ -28,7 +28,11 @@ except Exception:  # sem ficheiro de segredos (execução local): usa-se apenas 
     pass
 
 import database as db  # noqa: E402
-from ai_analyzer import MOTIVO_EMPREGADO, ErroIA, analisar_resultados, analisar_sem_ia  # noqa: E402
+import ai_analyzer  # noqa: E402
+from ai_analyzer import ErroIA, analisar_resultados, analisar_sem_ia  # noqa: E402
+
+# getattr: se o servidor ainda tiver em memória uma versão antiga do módulo, a app não falha.
+MOTIVO_EMPREGADO = getattr(ai_analyzer, "MOTIVO_EMPREGADO", "Empregado, sem sinais de procurar trabalho")
 from database import ErroBaseDados  # noqa: E402
 from export_utils import ErroExportacao, exportar_csv, exportar_excel, exportar_pdf  # noqa: E402
 from models import (  # noqa: E402
