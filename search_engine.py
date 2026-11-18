@@ -37,7 +37,8 @@ DOMINIOS_EXCLUIDOS = [
 # pessoais do LinkedIn nunca são filtrados por estes sinais.
 _RE_OFERTA = re.compile(
     r"\(m/f\)|\bm/f\b|ofertas? de emprego|\bvagas?\b|\brecrut(?:a|amento)\b|candidat[ae]-se|"
-    r"estamos a recrutar|we are hiring|job offer|/jobs?/|/vagas?/|/empregos?/|/careers?/|/carreiras?/",
+    r"estamos a recrutar|we are hiring|job offer|/jobs?/|/vagas?/|/empregos?/|/careers?/|/carreiras?/|"
+    r"bolsa[ _-]?(?:de[ _-])?emprego|oportunidades de emprego",
     re.IGNORECASE,
 )
 
@@ -83,7 +84,7 @@ def _locais_de_pesquisa(localizacoes: list[str], outra: str) -> list[str]:
     return list(dict.fromkeys(locais)) or ["Lisboa"]
 
 
-def gerar_consultas(parametros: dict, limite: int = 8) -> list[str]:
+def gerar_consultas(parametros: dict, limite: int = 8, rodada: int = 0) -> list[str]:
     """
     Gera automaticamente as consultas combinando especialidade, localização,
     certificações, disponibilidade e tipo de trabalho.
@@ -104,20 +105,31 @@ def gerar_consultas(parametros: dict, limite: int = 8) -> list[str]:
 
     # Todas as consultas procuram o PROFISSIONAL (perfil, currículo, quem procura trabalho),
     # nunca ofertas de emprego publicadas por empresas.
+    # Perfis do LinkedIn só de Portugal (pt.linkedin.com).
     modelos = [
-        'site:linkedin.com/in "{esp}" {loc} "open to work" OR "à procura de emprego" OR "disponível"',
+        'site:pt.linkedin.com/in "{esp}" {loc} "open to work" OR "à procura de emprego" OR "disponível"',
         '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de novas oportunidades"',
-        'site:linkedin.com/in "{esp}" {loc}',
+        'site:pt.linkedin.com/in "{esp}" {loc}',
         # Fontes onde o próprio profissional costuma deixar telefone ou email.
         '"{esp}" {loc} currículo OR CV "telemóvel" OR "contacto" OR "email" disponível',
         'site:facebook.com "{esp}" {loc} disponível OR "procuro trabalho" contacto',
         '"{esp}" {loc} currículo OR "curriculum vitae" OR CV experiência',
         '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" contacto',
+        'site:pt.linkedin.com/in "{esp}" Portugal {loc} anos de experiência',
+        'site:pt.linkedin.com/in "{esp}" {loc} manutenção instalação',
     ]
     if termo_contrato:
         modelos.insert(1, '"{esp}" {loc} ' + termo_contrato)
     if exige_fgas:
         modelos.insert(1, '"{esp}" {loc} "gases fluorados" OR "F-Gas" certificado técnico')
+
+    # Cada nova pesquisa começa noutro ponto da lista de modelos e de especialidades,
+    # para não devolver sempre os mesmos resultados (e os mesmos duplicados).
+    if rodada:
+        desloc = (rodada * 3) % len(modelos)
+        modelos = modelos[desloc:] + modelos[:desloc]
+        desloc_esp = rodada % len(especialidades)
+        especialidades = especialidades[desloc_esp:] + especialidades[:desloc_esp]
 
     consultas: list[str] = []
     # Percorre os modelos em rondas para que todas as especialidades fiquem representadas.
@@ -168,6 +180,7 @@ def _pesquisar_uma(cliente, consulta: str, max_resultados: int) -> list[dict]:
         max_results=max_resultados,
         include_raw_content=True,
         exclude_domains=DOMINIOS_EXCLUIDOS,
+        country="portugal",
         timeout=TEMPO_LIMITE_SEGUNDOS,
     )
     return (resposta or {}).get("results") or []

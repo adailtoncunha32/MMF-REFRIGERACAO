@@ -291,10 +291,37 @@ def _analisar_lote(cliente, modelo: str, lote: list[tuple[int, dict]], criterios
 # Verificações contra invenção de dados
 # ---------------------------------------------------------------------------
 
+# Palavras que indicam uma organização (empresa, escola, associação…) e não uma pessoa.
+_PALAVRAS_ORGANIZACAO = {
+    "lda", "sa", "unipessoal", "limitada", "escola", "associacao", "academia", "instituto", "centro",
+    "formacao", "grupo", "group", "empresa", "servicos", "climatizacao", "refrigeracao", "solucoes",
+    "engenharia", "comercio", "industria", "industrial", "tecnologia", "tecnologias", "assistencia",
+    "manutencao", "instalacoes", "equipamentos", "camara", "municipio", "universidade", "faculdade",
+    "agencia", "recursos", "humanos", "consultoria", "projetos", "obras", "bolsa", "emprego", "apief",
+}
+# Subdomínios do LinkedIn de outros países (o perfil pode não ser de Portugal).
+_LINKEDIN_ESTRANGEIRO = re.compile(r"^(?!pt\.|www\.)[a-z]{2}\.linkedin\.com$")
+
+
+def parece_nome_de_pessoa(nome: str) -> bool:
+    """True se o nome parecer de uma pessoa (pelo menos nome e apelido, sem siglas nem termos de empresa)."""
+    nome = (nome or "").strip()
+    if not nome or nome == NAO_IDENTIFICADO:
+        return False
+    palavras = [p for p in re.split(r"[\s.]+", nome) if p]
+    if len(palavras) < 2 or len(palavras) > 6 or any(ch.isdigit() for ch in nome):
+        return False
+    if nome.isupper() and len(nome.replace(" ", "")) <= 8:
+        return False  # siglas como «APIEF»
+    return not ({normalizar_texto(p) for p in palavras} & _PALAVRAS_ORGANIZACAO)
+
+
 def _verificar_candidato(candidato: CandidatoIA, resultados: list[dict]) -> Optional[CandidatoIA]:
     """Liga o candidato à fonte real e elimina contactos que não constem dela."""
     if candidato.tipo_resultado not in TIPOS_CANDIDATO:
         return None
+    if not parece_nome_de_pessoa(candidato.nome):
+        return None  # organizações, siglas e nomes não identificados não são candidatos
     if not 0 <= candidato.indice_resultado < len(resultados):
         return None  # sem origem verificável
     fonte = resultados[candidato.indice_resultado]
@@ -446,8 +473,9 @@ def _extrair_sem_ia(indice: int, r: dict, criterios: dict) -> Optional[Candidato
     especialidades = especialidades[:4]
 
     localizacao = ""
+    texto_sem_nome = texto.replace(normalizar_texto(nome), " ") if nome != NAO_IDENTIFICADO else texto
     for nome_local in sorted(COORDENADAS, key=len, reverse=True):
-        if re.search(rf"\b{re.escape(normalizar_texto(nome_local))}\b", texto):
+        if re.search(rf"\b{re.escape(normalizar_texto(nome_local))}\b", texto_sem_nome):
             localizacao = nome_local
             break
 
@@ -473,7 +501,11 @@ def _extrair_sem_ia(indice: int, r: dict, criterios: dict) -> Optional[Candidato
         score += 15
     if telefone or email:
         score += 10
-    score = min(score, 95)
+    if not localizacao:
+        score -= 15  # sem nenhuma localidade portuguesa no perfil
+    if _LINKEDIN_ESTRANGEIRO.match(r["dominio"]) and not localizacao:
+        return None  # perfil de outro país, sem ligação a Portugal
+    score = max(10, min(score, 95))
 
     return CandidatoIA(
         indice_resultado=indice,

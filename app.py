@@ -445,7 +445,12 @@ def executar_prospecao(parametros: dict) -> None:
         return
 
     # Todas as pesquisas são tratadas como urgentes: número máximo de consultas.
-    consultas = gerar_consultas(parametros, 12)
+    # A «rodada» muda as consultas a cada pesquisa, para trazer resultados novos.
+    try:
+        rodada = len(db.listar_pesquisas_df())
+    except ErroBaseDados:
+        rodada = 0
+    consultas = gerar_consultas(parametros, 12, rodada)
     criterios = {k: v for k, v in parametros.items() if k not in ("max_resultados", "urgente")}
     criterios["prioridade"] = ("Alta. A necessidade é urgente: privilegiar profissionais com "
                                "disponibilidade imediata e contacto direto.")
@@ -487,7 +492,9 @@ def executar_prospecao(parametros: dict) -> None:
 
         # 2) Análise: IA da Anthropic; sem chave ou em caso de falha, extração por regras.
         candidatos, descartados, avisos_ia = [], [], []
+        erro_ia = ""
         usar_ia = bool(chave_api("ANTHROPIC_API_KEY"))
+        parametros["modo_analise"] = "IA" if usar_ia else "Palavras-chave (sem chave da Anthropic)"
         if usar_ia:
             barra_ia = st.progress(0.0, text="A analisar perfis com IA…")
             try:
@@ -497,13 +504,15 @@ def executar_prospecao(parametros: dict) -> None:
                         feito / total, text=f"A analisar perfis com IA… {feito}/{total} lotes"),
                 )
             except ErroIA as exc:
-                st.warning(f"A IA não está disponível ({exc}). Os perfis foram identificados "
-                           "automaticamente por palavras-chave.")
+                erro_ia = str(exc)
                 usar_ia = False
-            except Exception:
-                st.warning("A IA não respondeu. Os perfis foram identificados automaticamente por "
-                           "palavras-chave.")
+            except Exception as exc:
+                erro_ia = f"erro inesperado ({type(exc).__name__})"
                 usar_ia = False
+            if not usar_ia:
+                st.error(f"A IA não funcionou nesta pesquisa: {erro_ia} Os perfis foram identificados "
+                         "por palavras-chave. Avise o administrador.")
+                parametros["erro_ia"] = erro_ia
         if not usar_ia:
             if not chave_api("ANTHROPIC_API_KEY"):
                 st.write("Modo sem IA: perfis identificados automaticamente por palavras-chave.")
