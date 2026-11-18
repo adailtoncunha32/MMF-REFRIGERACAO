@@ -28,7 +28,7 @@ except Exception:  # sem ficheiro de segredos (execução local): usa-se apenas 
     pass
 
 import database as db  # noqa: E402
-from ai_analyzer import ErroIA, analisar_resultados, analisar_sem_ia  # noqa: E402
+from ai_analyzer import MOTIVO_EMPREGADO, ErroIA, analisar_resultados, analisar_sem_ia  # noqa: E402
 from database import ErroBaseDados  # noqa: E402
 from export_utils import ErroExportacao, exportar_csv, exportar_excel, exportar_pdf  # noqa: E402
 from models import (  # noqa: E402
@@ -542,12 +542,17 @@ def executar_prospecao(parametros: dict) -> None:
         estado.update(label=f"Prospeção concluída — {novos} novos candidatos", state="complete",
                       expanded=False)
 
+    empregados = sum(d.get("motivo") == MOTIVO_EMPREGADO for d in descartados)
+    nota_empregados = (f" · {empregados} perfis ignorados por estarem empregados, sem sinais de "
+                       "procurar trabalho") if empregados else ""
     if not candidatos:
         st.warning(f"Foram analisados {len(resultados)} resultados, mas nenhum corresponde a um "
-                   "profissional individual (empresas, anúncios e diretórios são ignorados).")
+                   "profissional à procura de trabalho (empresas, anúncios, diretórios e pessoas "
+                   f"empregadas são ignorados){nota_empregados}. Tente outra especialidade ou zona.")
         return
-    st.success(f"{len(candidatos)} profissionais encontrados: {novos} novos e {duplicados} que já estavam "
-               f"guardados · {len(descartados)} resultados descartados (empresas, anúncios e outros).")
+    st.success(f"{len(candidatos)} profissionais à procura de trabalho: {novos} novos e {duplicados} que "
+               f"já estavam guardados{nota_empregados} · {len(descartados) - empregados} outros resultados "
+               "descartados (empresas, anúncios e outros).")
     if st.session_state.get("pagina") != "Candidatos":
         st.button("Ver os candidatos desta pesquisa", icon=":material/group:", type="primary",
                   key="ver_pesquisa_nova", on_click=_abrir_pesquisa, args=(pesquisa_id,))

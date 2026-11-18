@@ -38,7 +38,8 @@ DOMINIOS_EXCLUIDOS = [
 _RE_OFERTA = re.compile(
     r"\(m/f\)|\bm/f\b|ofertas? de emprego|\bvagas?\b|\brecrut(?:a|amento)\b|candidat[ae]-se|"
     r"estamos a recrutar|we are hiring|job offer|/jobs?/|/vagas?/|/empregos?/|/careers?/|/carreiras?/|"
-    r"bolsa[ _-]?(?:de[ _-])?emprego|oportunidades de emprego",
+    r"bolsa[ _-]?(?:de[ _-])?emprego|oportunidades de emprego|\bprocuramos\b|precisa-se|admite-se|"
+    r"\badmitimos\b|contrata-se",
     re.IGNORECASE,
 )
 
@@ -103,20 +104,23 @@ def gerar_consultas(parametros: dict, limite: int = 8, rodada: int = 0) -> list[
         "fluorad" in e.lower() or "f-gas" in e.lower() for e in especialidades
     )
 
-    # Todas as consultas procuram o PROFISSIONAL (perfil, currículo, quem procura trabalho),
-    # nunca ofertas de emprego publicadas por empresas.
-    # Perfis do LinkedIn só de Portugal (pt.linkedin.com).
+    # Todas as consultas exigem um SINAL DE PROCURA DE TRABALHO (open to work, procuro emprego,
+    # disponível, recém-formado, trabalhador independente). Perfis genéricos — quase sempre de
+    # pessoas empregadas — deixam de ser pesquisados. Nunca ofertas de emprego de empresas.
+    # LinkedIn só de Portugal (pt.linkedin.com).
     modelos = [
-        'site:pt.linkedin.com/in "{esp}" {loc} "open to work" OR "à procura de emprego" OR "disponível"',
-        '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de novas oportunidades"',
-        'site:pt.linkedin.com/in "{esp}" {loc}',
-        # Fontes onde o próprio profissional costuma deixar telefone ou email.
-        '"{esp}" {loc} currículo OR CV "telemóvel" OR "contacto" OR "email" disponível',
-        'site:facebook.com "{esp}" {loc} disponível OR "procuro trabalho" contacto',
-        '"{esp}" {loc} currículo OR "curriculum vitae" OR CV experiência',
-        '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" contacto',
-        'site:pt.linkedin.com/in "{esp}" Portugal {loc} anos de experiência',
-        'site:pt.linkedin.com/in "{esp}" {loc} manutenção instalação',
+        'site:pt.linkedin.com/in "{esp}" {loc} "#OpenToWork" OR "open to work" OR "à procura de novas oportunidades" OR "disponível de imediato"',
+        '"{esp}" {loc} "procuro emprego" OR "procuro trabalho" OR "à procura de emprego"',
+        # Grupos públicos de Facebook onde os técnicos publicam «procuro trabalho».
+        'site:facebook.com/groups {esp} "procuro trabalho" OR "procuro emprego" OR "procuro uma oportunidade" OR "estou disponível"',
+        # Anúncios individuais do OLX de técnicos que oferecem os seus serviços.
+        'site:olx.pt/d/anuncio {esp} {loc}',
+        'site:facebook.com "{esp}" {loc} "procuro trabalho" OR "procuro emprego" OR "estou disponível"',
+        'site:pt.linkedin.com/in "{esp}" {loc} "à procura de" OR "procuro" OR "disponível para"',
+        '"{esp}" {loc} currículo OR CV "procuro" OR "disponível" telemóvel OR email',
+        # Recém-formados (cursos de AVAC e F-Gas) à procura do primeiro emprego.
+        '"{esp}" {loc} "recém-formado" OR "formação concluída" OR "curso concluído" OR "primeiro emprego"',
+        '"{esp}" {loc} freelancer OR "trabalhador independente" OR "por conta própria" disponível',
     ]
     if termo_contrato:
         modelos.insert(1, '"{esp}" {loc} ' + termo_contrato)

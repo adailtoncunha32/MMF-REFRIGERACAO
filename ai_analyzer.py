@@ -159,8 +159,13 @@ disponibilidade, tipo de contratação). Informação escassa baixa o score.
 - nivel_confianca (0-100): quão completa, recente e verificável é a informação.
 - justificacao_score: uma frase.
 - resumo: duas frases factuais sobre o perfil.
-- disponibilidade_classificacao: "Confirmada" só com indicação explícita e recente; "Provável" com \
-sinais indiretos (procura trabalho, freelancer ativo); "Não disponível" se a fonte o indicar.
+- disponibilidade_classificacao: "Confirmada" só com indicação explícita e recente (open to work, \
+procuro emprego, disponível de imediato); "Provável" com sinais indiretos (freelancer ou trabalhador \
+independente que anuncia os seus serviços, recém-formado, último emprego já terminado); "Não \
+disponível" quando a fonte o indicar OU quando a pessoa tem um emprego atual (cargo atual, \
+experiência "até ao presente"/"to present", empresa atual) sem nenhum sinal de procurar trabalho, \
+OU quando o único sinal de procura é antigo (mais de 6 meses, se houver datas). "Desconhecida" só \
+quando não há informação nenhuma sobre a situação profissional atual.
 - recomendacao: "Contactar imediatamente" para perfis muito adequados com contacto ou \
 disponibilidade; "Contactar" para perfis adequados; "Guardar para mais tarde" quando faltam dados; \
 "Não recomendado" quando não serve.
@@ -298,9 +303,15 @@ _PALAVRAS_ORGANIZACAO = {
     "engenharia", "comercio", "industria", "industrial", "tecnologia", "tecnologias", "assistencia",
     "manutencao", "instalacoes", "equipamentos", "camara", "municipio", "universidade", "faculdade",
     "agencia", "recursos", "humanos", "consultoria", "projetos", "obras", "bolsa", "emprego", "apief",
+    # Títulos de anúncios (ex.: OLX «Técnico em Ar Condicionado»), que não são nomes de pessoas.
+    "tecnico", "tecnica", "instalacao", "reparacao", "avac", "hvac", "ar", "condicionado", "frio",
+    "servico", "climatizacoes", "eletricista", "canalizador",
 }
 # Subdomínios do LinkedIn de outros países (o perfil pode não ser de Portugal).
 _LINKEDIN_ESTRANGEIRO = re.compile(r"^(?!pt\.|www\.)[a-z]{2}\.linkedin\.com$")
+
+
+MOTIVO_EMPREGADO = "Empregado, sem sinais de procurar trabalho"
 
 
 def parece_nome_de_pessoa(nome: str) -> bool:
@@ -381,8 +392,15 @@ def analisar_resultados(
                 resposta = tarefa.result()
                 for candidato in resposta.candidatos:
                     verificado = _verificar_candidato(candidato, resultados)
-                    if verificado:
-                        candidatos.append(verificado)
+                    if not verificado:
+                        continue
+                    if verificado.disponibilidade_classificacao == "Não disponível":
+                        # Empregado e sem sinais de procurar trabalho: não interessa guardar.
+                        descartados.append({**resultados[verificado.indice_resultado],
+                                            "tipo_resultado": verificado.tipo_resultado,
+                                            "motivo": MOTIVO_EMPREGADO})
+                        continue
+                    candidatos.append(verificado)
                 for d in resposta.descartados:
                     if 0 <= d.indice_resultado < len(resultados):
                         descartados.append(
@@ -436,9 +454,9 @@ _PALAVRAS_ESPECIALIDADE = [
 _PALAVRAS_RELEVANTES = ("avac", "hvac", "refrigera", "climatiza", "ar condicionado", "frio", "chiller",
                         "vrv", "vrf", "bomba de calor", "caldeira", "solar", "termossif", "aquecimento",
                         "gases fluorados", "f gas", "fgas", "frigorif", "rooftop")
-_SINAIS_DISPONIVEL = ("open to work", "procuro emprego", "procuro trabalho", "a procura de",
+_SINAIS_DISPONIVEL = ("open to work", "opentowork", "procuro emprego", "procuro trabalho", "a procura de",
                       "disponivel", "disponibilidade imediata", "novas oportunidades", "freelancer",
-                      "trabalhador independente", "por conta propria")
+                      "trabalhador independente", "por conta propria", "recem formado", "primeiro emprego")
 
 
 def _parece_perfil_pessoal(r: dict) -> bool:
@@ -481,7 +499,11 @@ def _extrair_sem_ia(indice: int, r: dict, criterios: dict) -> Optional[Candidato
 
     telefone = _RE_TELEFONE.search(r["conteudo"])
     email = _RE_EMAIL_TEXTO.search(r["conteudo"])
-    disponivel = any(s in texto for s in _SINAIS_DISPONIVEL)
+    # «Estamos à procura de…» é uma empresa a recrutar, não a pessoa à procura de trabalho.
+    texto_sinais = re.sub(r"\b(?:estamos|esta|procuramos|empresa)\s+a procura de\b", " ", texto)
+    disponivel = any(s in texto_sinais for s in _SINAIS_DISPONIVEL)
+    if not disponivel:
+        return None  # sem sinais de procurar trabalho (quase sempre alguém empregado)
 
     # Score simples: especialidade, localização, disponibilidade e contacto.
     score = 35
